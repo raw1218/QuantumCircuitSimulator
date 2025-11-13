@@ -42,6 +42,7 @@ type GateGlyphProps = {
     kind: GateKind | string;
     label?: string;
     selected?: boolean;
+    isPreview?: boolean;
 };
 
 function gateStyleFor(kind: string | undefined) {
@@ -63,13 +64,21 @@ function gateStyleFor(kind: string | undefined) {
     }
 }
 
-export function GateGlyph({ kind, label, selected }: GateGlyphProps) {
+export function GateGlyph({ kind, label, selected, isPreview }: GateGlyphProps) {
     const k = typeof kind === 'string' ? kind : '';
     const style = gateStyleFor(k);
     const text = label ?? k ?? '';
 
-    const borderWidth = selected ? 3 : 2;
-    const boxShadow = selected ? '0 0 8px rgba(129, 230, 217, 0.9)' : 'none';
+    // Make preview VERY obvious
+    const borderWidth = selected && !isPreview ? 3 : 2;
+    const boxShadow =
+        selected && !isPreview ? '0 0 8px rgba(129, 230, 217, 0.9)' : 'none';
+
+    // Preview style: dashed cyan border, transparent fill, low opacity
+    const borderColor = isPreview ? '#22d3ee' : style.border;
+    const bgColor = isPreview ? 'transparent' : style.bg;
+    const borderStyle = isPreview ? 'dashed' as const : 'solid' as const;
+    const opacity = isPreview ? 0.7 : 1;
 
     return (
         <div
@@ -77,8 +86,10 @@ export function GateGlyph({ kind, label, selected }: GateGlyphProps) {
                 width: 40,
                 height: 40,
                 borderRadius: 4,
-                border: `${borderWidth}px solid ${style.border}`,
-                background: style.bg,
+                borderWidth,
+                borderColor,
+                borderStyle,
+                background: bgColor,
                 color: '#000000',
                 fontSize: 16,
                 fontFamily: 'monospace',
@@ -87,6 +98,7 @@ export function GateGlyph({ kind, label, selected }: GateGlyphProps) {
                 justifyContent: 'center',
                 boxSizing: 'border-box',
                 boxShadow,
+                opacity,
             }}
         >
             {text}
@@ -96,14 +108,26 @@ export function GateGlyph({ kind, label, selected }: GateGlyphProps) {
 
 // ===== Gate node (used by ReactFlow) =====
 
-type GateData = { label?: string; kind?: string };
+type GateData = { label?: string; kind?: string; isPreview?: boolean };
 
 export function GateNode(props: NodeProps) {
     const data = props.data as GateData;
     const kind = data.kind ?? '';
     const label = data.label ?? kind ?? '';
+    const isPreview = !!data.isPreview;
 
-    return <GateGlyph kind={kind} label={label} selected={props.selected} />;
+    if (isPreview) {
+        console.log('Rendering PREVIEW gate node', { id: props.id, kind, label });
+    }
+
+    return (
+        <GateGlyph
+            kind={kind}
+            label={label}
+            selected={props.selected}
+            isPreview={isPreview}
+        />
+    );
 }
 
 // ===== Node type map for ReactFlow =====
