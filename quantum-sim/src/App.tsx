@@ -27,6 +27,7 @@ import {
     COL_WIDTH,
     rowY,
     colX,
+    snapToGrid,
 } from './quantum/layout';
 import type { GateKind } from './quantum/model';
 
@@ -35,20 +36,6 @@ const GATE_PALETTE: GateKind[] = ['H', 'X', 'Z', 'MEASURE'];
 /* ──────────────────────────────────────────────────────────────
    Grid helpers
    ────────────────────────────────────────────────────────────── */
-
-// Given a flow-space Y (for the *center* of the gate + GATE_Y_OFFSET),
-// snap to the nearest row and clamp to [0, nQubits-1]
-function snapRowFromFlowY(flowY: number, nQubits: number): { row: number; ySnapped: number } {
-    // approximate row index from geometry
-    const approxRow = Math.round((flowY - Y_OFFSET) / ROW_HEIGHT);
-    const row = Math.max(0, Math.min(nQubits - 1, approxRow));
-    const ySnapped = rowY(row);
-    return { row, ySnapped };
-}
-
-function colFromSnappedX(xSnapped: number): number {
-    return Math.round((xSnapped - X_WIRE) / COL_WIDTH);
-}
 
 function gridFromNode(node: Node) {
     const row = Math.round((node.position.y + GATE_Y_OFFSET - Y_OFFSET) / ROW_HEIGHT);
@@ -86,7 +73,6 @@ function createRailNodes(nQubits: number): Node[] {
     for (let i = 0; i < nQubits; i++) {
         const y = rowY(i);
 
-        // Label node (q0, q1, ...)
         rails.push({
             id: `label-${i}`,
             type: 'qubitLabel',
@@ -96,7 +82,6 @@ function createRailNodes(nQubits: number): Node[] {
             selectable: false,
         });
 
-        // Wire node (horizontal line)
         rails.push({
             id: `wire-${i}`,
             type: 'wire',
@@ -220,7 +205,6 @@ function GatePalette({ palette, onDragStart, onDragEnd }: GatePaletteProps) {
 function CircuitCanvas() {
     const { screenToFlowPosition } = useReactFlow();
 
-    // Start with 3 qubits (rails)
     const [nQubits, setNQubits] = useState(3);
 
     const [nodes, setNodes, onNodesChangeBase] = useNodesState<Node>(
@@ -232,16 +216,10 @@ function CircuitCanvas() {
     const [previewGate, setPreviewGate] = useState<PreviewGate | null>(null);
     const [dragKind, setDragKind] = useState<GateKind | null>(null);
 
-    // remember original position of gate when drag starts
     const dragStartPosRef = useRef<Record<string, { x: number; y: number }>>({});
 
-    const onNodesChange = (changes: NodeChange[]) => {
-        onNodesChangeBase(changes);
-    };
-
-    const onEdgesChange = (changes: EdgeChange[]) => {
-        onEdgesChangeBase(changes);
-    };
+    const onNodesChange = (changes: NodeChange[]) => onNodesChangeBase(changes);
+    const onEdgesChange = (changes: EdgeChange[]) => onEdgesChangeBase(changes);
 
     const handleSelectionChange = (params: SelectionChange) => {
         const gateNode = params.nodes.find((n) => n.type === 'gate');
@@ -286,19 +264,15 @@ function CircuitCanvas() {
             return;
         }
 
-        const pos = screenToFlowPosition({
-            x: event.clientX,
-            y: event.clientY,
-        });
+        const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
-        // snap + clamp row based on nQubits
-        const { row, ySnapped } = snapRowFromFlowY(pos.y + GATE_Y_OFFSET, nQubits);
-        const xSnapped = (() => {
-            const approxCol = Math.round((pos.x - X_WIRE) / COL_WIDTH);
-            return colX(approxCol);
-        })();
+        // snap + clamp (both row & col) with layout helper
+        const { row, col, xSnapped, ySnapped } = snapToGrid(
+            pos.x,
+            pos.y + GATE_Y_OFFSET,
+            nQubits,
+        );
 
-        const col = Math.round((xSnapped - X_WIRE) / COL_WIDTH);
         const newId = `gate-${kind}-${Date.now()}`;
 
         setNodes((nds) => {
@@ -328,23 +302,11 @@ function CircuitCanvas() {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
 
-        if (!dragKind) {
-            // not dragging from palette
-            return;
-        }
+        if (!dragKind) return;
 
-        const pos = screenToFlowPosition({
-            x: event.clientX,
-            y: event.clientY,
-        });
+        const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
-        const { row, ySnapped } = snapRowFromFlowY(pos.y + GATE_Y_OFFSET, nQubits);
-        const xSnapped = (() => {
-            const approxCol = Math.round((pos.x - X_WIRE) / COL_WIDTH);
-            return colX(approxCol);
-        })();
-
-        const col = Math.round((xSnapped - X_WIRE) / COL_WIDTH);
+        const { row, col } = snapToGrid(pos.x, pos.y + GATE_Y_OFFSET, nQubits);
 
         if (isCellOccupied(nodes, row, col)) {
             setPreviewGate(null);
@@ -362,7 +324,6 @@ function CircuitCanvas() {
     const handleNodeDragStart = (_: MouseEvent, node: Node) => {
         if (node.type !== 'gate') return;
 
-        // remember original position
         dragStartPosRef.current[node.id] = { ...node.position };
 
         const data = node.data as any;
@@ -372,9 +333,9 @@ function CircuitCanvas() {
             return;
         }
 
+        const flowX = node.position.x;
         const flowY = node.position.y + GATE_Y_OFFSET;
-        const { row } = snapRowFromFlowY(flowY, nQubits);
-        const col = Math.round((node.position.x - X_WIRE) / COL_WIDTH);
+        const { row, col } = snapToGrid(flowX, flowY, nQubits);
 
         if (isCellOccupied(nodes, row, col, node.id)) {
             setPreviewGate(null);
@@ -393,11 +354,9 @@ function CircuitCanvas() {
             return;
         }
 
+        const flowX = node.position.x;
         const flowY = node.position.y + GATE_Y_OFFSET;
-        const { row, ySnapped } = snapRowFromFlowY(flowY, nQubits);
-        const approxCol = Math.round((node.position.x - X_WIRE) / COL_WIDTH);
-        const xSnapped = colX(approxCol);
-        const col = Math.round((xSnapped - X_WIRE) / COL_WIDTH);
+        const { row, col } = snapToGrid(flowX, flowY, nQubits);
 
         if (isCellOccupied(nodes, row, col, node.id)) {
             setPreviewGate(null);
@@ -417,24 +376,20 @@ function CircuitCanvas() {
             return;
         }
 
+        const flowX = node.position.x;
         const flowY = node.position.y + GATE_Y_OFFSET;
-        const { row, ySnapped } = snapRowFromFlowY(flowY, nQubits);
-        const approxCol = Math.round((node.position.x - X_WIRE) / COL_WIDTH);
-        const xSnapped = colX(approxCol);
-        const col = Math.round((xSnapped - X_WIRE) / COL_WIDTH);
+        const { row, col, xSnapped, ySnapped } = snapToGrid(flowX, flowY, nQubits);
 
         setNodes((nds) => {
             const occupied = isCellOccupied(nds, row, col, node.id);
             const startPos = dragStartPosRef.current[node.id];
 
             if (occupied && startPos) {
-                // revert to original cell
                 return nds.map((n) =>
                     n.id === node.id ? { ...n, position: { ...startPos } } : n,
                 );
             }
 
-            // otherwise snap to new snapped position (clamped row)
             return nds.map((n) =>
                 n.id === node.id
                     ? {

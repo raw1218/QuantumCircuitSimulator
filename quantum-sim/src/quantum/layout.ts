@@ -1,7 +1,5 @@
 // src/quantum/layout.ts
 
-export const N_QUBITS = 3;
-
 export const ROW_HEIGHT = 80;
 export const Y_OFFSET = 120;
 export const X_LABEL = 40;
@@ -13,27 +11,24 @@ export const GATE_Y_OFFSET = 20;
 export const rowY = (row: number) => Y_OFFSET + row * ROW_HEIGHT;
 export const colX = (col: number) => X_WIRE + col * COL_WIDTH;
 
-const clamp = (v: number, min: number, max: number) =>
-    v < min ? min : v > max ? max : v;
 
-export function snapToRow(y: number): { row: number; ySnapped: number } {
-    let bestRow = 0;
-    let bestDist = Infinity;
 
-    for (let r = 0; r < N_QUBITS; r++) {
-        const targetY = rowY(r);
-        const dist = Math.abs(y - targetY);
-        if (dist < bestDist) {
-            bestDist = dist;
-            bestRow = r;
-        }
-    }
+// Snap a point in *flow coordinates* (flowX, flowY) to the nearest
+// grid cell, clamping row to [0, nQubits-1] and col to [0, MAX_COLS-1].
+export function snapToGrid(
+    flowX: number,
+    flowY: number,
+    nQubits: number,
+): { row: number; col: number; xSnapped: number; ySnapped: number } {
+    // Approximate row/col based on your geometry
+    const approxRow = Math.round((flowY - Y_OFFSET) / ROW_HEIGHT);
+    const approxCol = Math.round((flowX - X_WIRE) / COL_WIDTH);
 
-    return { row: bestRow, ySnapped: rowY(bestRow) };
-}
+    const row = Math.max(0, Math.min(nQubits - 1, approxRow));
+    const col = Math.max(0, Math.min(MAX_COLS - 1, approxCol));
 
-export function snapToCol(x: number): { col: number; xSnapped: number } {
-    const rawCol = Math.round((x - X_WIRE) / COL_WIDTH);
-    const col = clamp(rawCol, 0, MAX_COLS);
-    return { col, xSnapped: colX(col) };
+    const xSnapped = colX(col);
+    const ySnapped = rowY(row);
+
+    return { row, col, xSnapped, ySnapped };
 }
