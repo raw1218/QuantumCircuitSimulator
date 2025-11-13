@@ -1,5 +1,5 @@
 ﻿import { useEffect, useState, useRef } from 'react';
-import type { DragEvent } from 'react';
+import type { DragEvent, MouseEvent } from 'react';
 import {
     Background,
     ReactFlow,
@@ -18,10 +18,8 @@ import {
 import '@xyflow/react/dist/style.css';
 
 import { nodeTypes, GateGlyph } from './quantum/nodes';
-import { initialNodes, initialEdges } from './quantum/scene';
+import { initialEdges } from './quantum/scene';
 import {
-    snapToRow,
-    snapToCol,
     GATE_Y_OFFSET,
     ROW_HEIGHT,
     Y_OFFSET,
@@ -34,10 +32,18 @@ import type { GateKind } from './quantum/model';
 
 const GATE_PALETTE: GateKind[] = ['H', 'X', 'Z', 'MEASURE'];
 
-// === grid helpers ===
+/* ──────────────────────────────────────────────────────────────
+   Grid helpers
+   ────────────────────────────────────────────────────────────── */
 
-function rowFromSnappedY(ySnapped: number): number {
-    return Math.round((ySnapped - Y_OFFSET) / ROW_HEIGHT);
+// Given a flow-space Y (for the *center* of the gate + GATE_Y_OFFSET),
+// snap to the nearest row and clamp to [0, nQubits-1]
+function snapRowFromFlowY(flowY: number, nQubits: number): { row: number; ySnapped: number } {
+    // approximate row index from geometry
+    const approxRow = Math.round((flowY - Y_OFFSET) / ROW_HEIGHT);
+    const row = Math.max(0, Math.min(nQubits - 1, approxRow));
+    const ySnapped = rowY(row);
+    return { row, ySnapped };
 }
 
 function colFromSnappedX(xSnapped: number): number {
@@ -50,7 +56,12 @@ function gridFromNode(node: Node) {
     return { row, col };
 }
 
-function isCellOccupied(nodes: Node[], row: number, col: number, ignoreId?: string) {
+function isCellOccupied(
+    nodes: Node[],
+    row: number,
+    col: number,
+    ignoreId?: string,
+): boolean {
     return nodes.some((n) => {
         if (n.type !== 'gate') return false;
         if (ignoreId && n.id === ignoreId) return false;
@@ -65,34 +76,50 @@ type PreviewGate = {
     kind: GateKind;
 };
 
-// === main canvas ===
+/* ──────────────────────────────────────────────────────────────
+   Rail (label + wire) generator
+   ────────────────────────────────────────────────────────────── */
 
-function CircuitCanvas() {
-    const { screenToFlowPosition } = useReactFlow();
+function createRailNodes(nQubits: number): Node[] {
+    const rails: Node[] = [];
 
-    const [nodes, setNodes, onNodesChangeBase] = useNodesState<Node>(initialNodes);
-    const [edges, setEdges, onEdgesChangeBase] = useEdgesState<Edge>(initialEdges);
+    for (let i = 0; i < nQubits; i++) {
+        const y = rowY(i);
 
-    const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
-    const [previewGate, setPreviewGate] = useState<PreviewGate | null>(null);
-    const [dragKind, setDragKind] = useState<GateKind | null>(null);
+        // Label node (q0, q1, ...)
+        rails.push({
+            id: `label-${i}`,
+            type: 'qubitLabel',
+            position: { x: 0, y },
+            data: { label: `q${i}` },
+            draggable: false,
+            selectable: false,
+        });
 
-    // for existing node drag: remember original position so we can revert
-    const dragStartPosRef = useRef<Record<string, { x: number; y: number }>>({});
+        // Wire node (horizontal line)
+        rails.push({
+            id: `wire-${i}`,
+            type: 'wire',
+            position: { x: X_WIRE, y },
+            data: {},
+            draggable: false,
+            selectable: false,
+        });
+    }
 
-    const onNodesChange = (changes: NodeChange[]) => {
-        onNodesChangeBase(changes);
-    };
-    const onEdgesChange = (changes: EdgeChange[]) => {
-        onEdgesChangeBase(changes);
-    };
+    return rails;
+}
 
-    const handleSelectionChange = (params: SelectionChange) => {
-        const gateNode = params.nodes.find((n) => n.type === 'gate');
-        setSelectedNodeId(gateNode ? gateNode.id : null);
-    };
+/* ──────────────────────────────────────────────────────────────
+   Hooks
+   ────────────────────────────────────────────────────────────── */
 
-    // delete selected gate on Delete / Backspace
+function useDeleteSelectedGate(
+    selectedNodeId: string | null,
+    setNodes: ReturnType<typeof useNodesState<Node>>[1],
+    setEdges: ReturnType<typeof useEdgesState<Edge>>[1],
+    clearSelection: () => void,
+) {
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
             if (!selectedNodeId) return;
@@ -103,14 +130,147 @@ function CircuitCanvas() {
             setEdges((eds) =>
                 eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId),
             );
-            setSelectedNodeId(null);
+            clearSelection();
         };
 
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, [selectedNodeId, setNodes, setEdges]);
+    }, [selectedNodeId, setNodes, setEdges, clearSelection]);
+}
 
-    // ------- palette drag (external) -------
+/* ──────────────────────────────────────────────────────────────
+   Presentational components
+   ────────────────────────────────────────────────────────────── */
+
+type GhostPreviewProps = {
+    previewGate: PreviewGate | null;
+};
+
+function GhostPreview({ previewGate }: GhostPreviewProps) {
+    if (!previewGate) return null;
+
+    return (
+        <ViewportPortal>
+            <div
+                style={{
+                    position: 'absolute',
+                    transform: `translate(${colX(previewGate.col)}px, ${rowY(previewGate.row) - GATE_Y_OFFSET
+                        }px)`,
+                    pointerEvents: 'none',
+                }}
+            >
+                <GateGlyph kind={previewGate.kind} isPreview />
+            </div>
+        </ViewportPortal>
+    );
+}
+
+type GatePaletteProps = {
+    palette: GateKind[];
+    onDragStart: (kind: GateKind, event: DragEvent<HTMLDivElement>) => void;
+    onDragEnd: () => void;
+};
+
+function GatePalette({ palette, onDragStart, onDragEnd }: GatePaletteProps) {
+    return (
+        <div
+            style={{
+                position: 'absolute',
+                left: 0,
+                right: 0,
+                bottom: 0,
+                padding: '8px 16px',
+                background: 'rgba(5, 7, 9, 0.9)',
+                borderTop: '1px solid #222',
+                display: 'flex',
+                gap: 8,
+                alignItems: 'center',
+            }}
+        >
+            <span
+                style={{
+                    color: '#aaa',
+                    fontSize: 14,
+                    fontFamily: 'system-ui, sans-serif',
+                    marginRight: 8,
+                }}
+            >
+                Drag a gate onto a wire (click to select, Delete to remove):
+            </span>
+
+            {palette.map((kind) => (
+                <div
+                    key={kind}
+                    draggable
+                    onDragStart={(event) => onDragStart(kind, event)}
+                    onDragEnd={onDragEnd}
+                    style={{ cursor: 'grab', userSelect: 'none' }}
+                >
+                    <GateGlyph kind={kind} />
+                </div>
+            ))}
+        </div>
+    );
+}
+
+/* ──────────────────────────────────────────────────────────────
+   Main canvas
+   ────────────────────────────────────────────────────────────── */
+
+function CircuitCanvas() {
+    const { screenToFlowPosition } = useReactFlow();
+
+    // Start with 3 qubits (rails)
+    const [nQubits, setNQubits] = useState(3);
+
+    const [nodes, setNodes, onNodesChangeBase] = useNodesState<Node>(
+        createRailNodes(3),
+    );
+    const [edges, setEdges, onEdgesChangeBase] = useEdgesState<Edge>(initialEdges);
+
+    const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+    const [previewGate, setPreviewGate] = useState<PreviewGate | null>(null);
+    const [dragKind, setDragKind] = useState<GateKind | null>(null);
+
+    // remember original position of gate when drag starts
+    const dragStartPosRef = useRef<Record<string, { x: number; y: number }>>({});
+
+    const onNodesChange = (changes: NodeChange[]) => {
+        onNodesChangeBase(changes);
+    };
+
+    const onEdgesChange = (changes: EdgeChange[]) => {
+        onEdgesChangeBase(changes);
+    };
+
+    const handleSelectionChange = (params: SelectionChange) => {
+        const gateNode = params.nodes.find((n) => n.type === 'gate');
+        setSelectedNodeId(gateNode ? gateNode.id : null);
+    };
+
+    useDeleteSelectedGate(
+        selectedNodeId,
+        setNodes,
+        setEdges,
+        () => setSelectedNodeId(null),
+    );
+
+    // Rebuild rails when nQubits changes; drop gates on removed rails
+    useEffect(() => {
+        setNodes((prev) => {
+            const gateNodes = prev.filter((n) => n.type === 'gate');
+
+            const filteredGates = gateNodes.filter((g) => {
+                const { row } = gridFromNode(g);
+                return row < nQubits;
+            });
+
+            const rails = createRailNodes(nQubits);
+            return [...rails, ...filteredGates];
+        });
+    }, [nQubits, setNodes]);
+
+    /* ------- palette drag (external) ------- */
 
     const handleDrop = (event: DragEvent<HTMLDivElement>) => {
         event.preventDefault();
@@ -126,23 +286,23 @@ function CircuitCanvas() {
             return;
         }
 
-        // React Flow docs: use client coords directly with screenToFlowPosition
         const pos = screenToFlowPosition({
             x: event.clientX,
             y: event.clientY,
         });
 
-        const { ySnapped } = snapToRow(pos.y + GATE_Y_OFFSET);
-        const { xSnapped } = snapToCol(pos.x);
+        // snap + clamp row based on nQubits
+        const { row, ySnapped } = snapRowFromFlowY(pos.y + GATE_Y_OFFSET, nQubits);
+        const xSnapped = (() => {
+            const approxCol = Math.round((pos.x - X_WIRE) / COL_WIDTH);
+            return colX(approxCol);
+        })();
 
-        const row = rowFromSnappedY(ySnapped);
-        const col = colFromSnappedX(xSnapped);
-
+        const col = Math.round((xSnapped - X_WIRE) / COL_WIDTH);
         const newId = `gate-${kind}-${Date.now()}`;
 
         setNodes((nds) => {
             if (isCellOccupied(nds, row, col)) {
-                // occupied → no new node
                 return nds;
             }
 
@@ -178,11 +338,13 @@ function CircuitCanvas() {
             y: event.clientY,
         });
 
-        const { ySnapped } = snapToRow(pos.y + GATE_Y_OFFSET);
-        const { xSnapped } = snapToCol(pos.x);
+        const { row, ySnapped } = snapRowFromFlowY(pos.y + GATE_Y_OFFSET, nQubits);
+        const xSnapped = (() => {
+            const approxCol = Math.round((pos.x - X_WIRE) / COL_WIDTH);
+            return colX(approxCol);
+        })();
 
-        const row = rowFromSnappedY(ySnapped);
-        const col = colFromSnappedX(xSnapped);
+        const col = Math.round((xSnapped - X_WIRE) / COL_WIDTH);
 
         if (isCellOccupied(nodes, row, col)) {
             setPreviewGate(null);
@@ -195,14 +357,13 @@ function CircuitCanvas() {
         setPreviewGate(null);
     };
 
-    // ------- node drag (internal) -------
+    /* ------- node drag (internal) ------- */
 
-    const handleNodeDragStart = (_: React.MouseEvent, node: Node) => {
+    const handleNodeDragStart = (_: MouseEvent, node: Node) => {
         if (node.type !== 'gate') return;
 
         // remember original position
         dragStartPosRef.current[node.id] = { ...node.position };
-        console.log(`node = ${node.id}, startPos = ${dragStartPosRef.current[node.id]}`);
 
         const data = node.data as any;
         const kind = data?.kind as GateKind | undefined;
@@ -211,10 +372,9 @@ function CircuitCanvas() {
             return;
         }
 
-        const { ySnapped } = snapToRow(node.position.y + GATE_Y_OFFSET);
-        const { xSnapped } = snapToCol(node.position.x);
-        const row = rowFromSnappedY(ySnapped);
-        const col = colFromSnappedX(xSnapped);
+        const flowY = node.position.y + GATE_Y_OFFSET;
+        const { row } = snapRowFromFlowY(flowY, nQubits);
+        const col = Math.round((node.position.x - X_WIRE) / COL_WIDTH);
 
         if (isCellOccupied(nodes, row, col, node.id)) {
             setPreviewGate(null);
@@ -223,7 +383,7 @@ function CircuitCanvas() {
         }
     };
 
-    const handleNodeDrag = (_: React.MouseEvent, node: Node) => {
+    const handleNodeDrag = (_: MouseEvent, node: Node) => {
         if (node.type !== 'gate') return;
 
         const data = node.data as any;
@@ -233,10 +393,11 @@ function CircuitCanvas() {
             return;
         }
 
-        const { ySnapped } = snapToRow(node.position.y + GATE_Y_OFFSET);
-        const { xSnapped } = snapToCol(node.position.x);
-        const row = rowFromSnappedY(ySnapped);
-        const col = colFromSnappedX(xSnapped);
+        const flowY = node.position.y + GATE_Y_OFFSET;
+        const { row, ySnapped } = snapRowFromFlowY(flowY, nQubits);
+        const approxCol = Math.round((node.position.x - X_WIRE) / COL_WIDTH);
+        const xSnapped = colX(approxCol);
+        const col = Math.round((xSnapped - X_WIRE) / COL_WIDTH);
 
         if (isCellOccupied(nodes, row, col, node.id)) {
             setPreviewGate(null);
@@ -250,23 +411,21 @@ function CircuitCanvas() {
         }
     };
 
-    const handleNodeDragStop = (_: React.MouseEvent, node: Node) => {
+    const handleNodeDragStop = (_: MouseEvent, node: Node) => {
         if (node.type !== 'gate') {
             setPreviewGate(null);
             return;
         }
 
-        const { ySnapped } = snapToRow(node.position.y + GATE_Y_OFFSET);
-        const { xSnapped } = snapToCol(node.position.x);
-        const row = rowFromSnappedY(ySnapped);
-        const col = colFromSnappedX(xSnapped);
+        const flowY = node.position.y + GATE_Y_OFFSET;
+        const { row, ySnapped } = snapRowFromFlowY(flowY, nQubits);
+        const approxCol = Math.round((node.position.x - X_WIRE) / COL_WIDTH);
+        const xSnapped = colX(approxCol);
+        const col = Math.round((xSnapped - X_WIRE) / COL_WIDTH);
 
         setNodes((nds) => {
             const occupied = isCellOccupied(nds, row, col, node.id);
-
-            // original position we saved when drag started
             const startPos = dragStartPosRef.current[node.id];
-            console.log(`id = ${node.id} occupied = ${occupied}, startPos =, ${ startPos }`);
 
             if (occupied && startPos) {
                 // revert to original cell
@@ -275,7 +434,7 @@ function CircuitCanvas() {
                 );
             }
 
-            // otherwise snap to new snapped position
+            // otherwise snap to new snapped position (clamped row)
             return nds.map((n) =>
                 n.id === node.id
                     ? {
@@ -289,6 +448,22 @@ function CircuitCanvas() {
         setPreviewGate(null);
     };
 
+    /* ------- palette handlers wired to component ------- */
+
+    const handlePaletteDragStart = (kind: GateKind, event: DragEvent<HTMLDivElement>) => {
+        setDragKind(kind);
+        event.dataTransfer.setData('text/plain', kind);
+        event.dataTransfer.setData('application/gate-kind', kind);
+        event.dataTransfer.effectAllowed = 'move';
+    };
+
+    const handlePaletteDragEnd = () => {
+        setDragKind(null);
+        setPreviewGate(null);
+    };
+
+    /* ------- render ------- */
+
     return (
         <div
             style={{
@@ -299,6 +474,54 @@ function CircuitCanvas() {
                 overflow: 'hidden',
             }}
         >
+            {/* Qubit count controls */}
+            <div
+                style={{
+                    position: 'absolute',
+                    top: 8,
+                    left: 8,
+                    background: 'rgba(0,0,0,0.5)',
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    color: '#fff',
+                    fontFamily: 'system-ui',
+                    display: 'flex',
+                    gap: 8,
+                    alignItems: 'center',
+                    zIndex: 10,
+                }}
+            >
+                <button
+                    onClick={() => setNQubits((n) => Math.max(1, n - 1))}
+                    style={{
+                        padding: '2px 6px',
+                        fontSize: 14,
+                        cursor: 'pointer',
+                        background: '#222',
+                        border: '1px solid #444',
+                        color: '#ddd',
+                    }}
+                >
+                    –
+                </button>
+
+                <span>{nQubits} qubits</span>
+
+                <button
+                    onClick={() => setNQubits((n) => Math.min(4, n + 1))}
+                    style={{
+                        padding: '2px 6px',
+                        fontSize: 14,
+                        cursor: 'pointer',
+                        background: '#222',
+                        border: '1px solid #444',
+                        color: '#ddd',
+                    }}
+                >
+                    +
+                </button>
+            </div>
+
             {/* ReactFlow canvas */}
             <div
                 style={{ width: '100%', height: '100%' }}
@@ -328,71 +551,20 @@ function CircuitCanvas() {
                 </ReactFlow>
             </div>
 
-            {/* Ghost preview gate, in FLOW coordinates via ViewportPortal */}
-            {previewGate && (
-                <ViewportPortal>
-                    <div
-                        style={{
-                            position: 'absolute',
-                            transform: `translate(${colX(previewGate.col)}px, ${rowY(previewGate.row) - GATE_Y_OFFSET
-                                }px)`,
-                            pointerEvents: 'none',
-                        }}
-                    >
-                        <GateGlyph kind={previewGate.kind} isPreview />
-                    </div>
-                </ViewportPortal>
-            )}
+            <GhostPreview previewGate={previewGate} />
 
-            {/* Bottom gate palette */}
-            <div
-                style={{
-                    position: 'absolute',
-                    left: 0,
-                    right: 0,
-                    bottom: 0,
-                    padding: '8px 16px',
-                    background: 'rgba(5, 7, 9, 0.9)',
-                    borderTop: '1px solid #222',
-                    display: 'flex',
-                    gap: 8,
-                    alignItems: 'center',
-                }}
-            >
-                <span
-                    style={{
-                        color: '#aaa',
-                        fontSize: 14,
-                        fontFamily: 'system-ui, sans-serif',
-                        marginRight: 8,
-                    }}
-                >
-                    Drag a gate onto a wire (click to select, Delete to remove):
-                </span>
-
-                {GATE_PALETTE.map((kind) => (
-                    <div
-                        key={kind}
-                        draggable
-                        onDragStart={(event) => {
-                            setDragKind(kind);
-                            event.dataTransfer.setData('text/plain', kind);
-                            event.dataTransfer.setData('application/gate-kind', kind);
-                            event.dataTransfer.effectAllowed = 'move';
-                        }}
-                        onDragEnd={() => {
-                            setDragKind(null);
-                            setPreviewGate(null);
-                        }}
-                        style={{ cursor: 'grab', userSelect: 'none' }}
-                    >
-                        <GateGlyph kind={kind} />
-                    </div>
-                ))}
-            </div>
+            <GatePalette
+                palette={GATE_PALETTE}
+                onDragStart={handlePaletteDragStart}
+                onDragEnd={handlePaletteDragEnd}
+            />
         </div>
     );
 }
+
+/* ──────────────────────────────────────────────────────────────
+   Root
+   ────────────────────────────────────────────────────────────── */
 
 export default function App() {
     return (
