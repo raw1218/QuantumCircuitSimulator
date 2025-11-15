@@ -1,10 +1,13 @@
 ﻿import { ReactFlowProvider } from '@xyflow/react';
-import CircuitCanvas from './quantum/circuitCanvas.tsx';
+import { CircuitCanvas, CircuitProvider } from './quantum/circuitCanvas.tsx';
+
 
 export default function App() {
   return (
-    <ReactFlowProvider>
-      <CircuitCanvas />
+      <ReactFlowProvider>
+    <CircuitProvider>
+              <CircuitCanvas />
+      </CircuitProvider>
     </ReactFlowProvider>
   );
 }

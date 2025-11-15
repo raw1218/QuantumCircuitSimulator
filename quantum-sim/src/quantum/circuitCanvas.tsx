@@ -1,10 +1,10 @@
 // src/CircuitCanvas.tsx
 
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, createContext, useContext} from 'react';
 import type { DragEvent, MouseEvent } from 'react';
 import { buildCircuitFromNodes } from './circuitBuilder';
 import { setCell, createEmptyCircuit } from './model';
-
+import { useQubitInputs } from './qubitInput'; 
 import {
   Background,
   ReactFlow,
@@ -35,7 +35,74 @@ import {
   MAX_COLS,
 } from './layout';
 import type { GateKind } from './model';
+import { QubitInputsColumn } from "./qubitInputRender"; 
 
+
+
+/********************** CONTEXT *********************************/
+
+
+function useCircuitState() {
+    const { screenToFlowPosition } = useReactFlow();
+    const [nQubits, setNQubits] = useState(3);
+    const [nodes, setNodes, onNodesChangeBase] = useNodesState<Node>(
+        createRailNodes(3),
+    );
+    const [edges, setEdges, onEdgesChangeBase] = useEdgesState<Edge>(initialEdges);
+    const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+
+    function addQubit() {
+        setNQubits((n) => n + 1);
+        // update nodes here if needed
+    }
+
+    const { qubitInputs, updateQubitInput, setQubitPreset } = useQubitInputs(nQubits);
+    return {
+        screenToFlowPosition,
+        nQubits,
+        setNQubits,
+        nodes,
+        setNodes,
+        onNodesChangeBase,
+        edges,
+        setEdges,
+        onEdgesChangeBase,
+        addQubit,
+        selectedNodeId,
+        setSelectedNodeId,
+        qubitInputs,
+        updateQubitInput,
+        setQubitPreset,
+    };
+}
+
+// Type is just "whatever useCircuitState returns"
+type CircuitContextValue = ReturnType<typeof useCircuitState>;
+
+// Real React context
+const CircuitContext = createContext<CircuitContextValue | null>(null);
+
+// Provider: creates ONE shared instance of the state
+export function CircuitProvider({ children }: { children: React.ReactNode }) {
+    const value = useCircuitState();
+    return (
+        <CircuitContext.Provider value={value}>
+            {children}
+        </CircuitContext.Provider>
+    );
+}
+
+// This is now your "context hook"
+export function useCircuitContext() {
+    const ctx = useContext(CircuitContext);
+    if (!ctx) {
+        throw new Error('useCircuitContext must be used inside <CircuitProvider>');
+    }
+    return ctx;
+}
+
+
+/******************************* END CONTEXT **************************************** */
 
 const GATE_PALETTE: GateKind[] = ['H', 'X', 'Y', 'Z', 'MEASURE', 'CNOT'];
 
@@ -105,28 +172,32 @@ function createRailNodes(nQubits: number): Node[] {
    Hooks
    ────────────────────────────────────────────────────────────── */
 
-function useDeleteSelectedGate(
-  selectedNodeId: string | null,
-  setNodes: ReturnType<typeof useNodesState<Node>>[1],
-  setEdges: ReturnType<typeof useEdgesState<Edge>>[1],
-  clearSelection: () => void,
-) {
-  useEffect(() => {
-    const handler = (event: KeyboardEvent) => {
-      if (!selectedNodeId) return;
-      if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+function useDeleteSelectedGate() {
+    const { setNodes, setEdges, selectedNodeId, setSelectedNodeId } =
+        useCircuitContext();
 
-      event.preventDefault();
-      setNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
-      setEdges((eds) =>
-        eds.filter((e) => e.source !== selectedNodeId && e.target !== selectedNodeId),
-      );
-      clearSelection();
-    };
+    useEffect(() => {
+        const handler = (event: KeyboardEvent) => {
+            console.log('keydown:', event.key, 'selectedNodeId =', selectedNodeId);
 
-    window.addEventListener('keydown', handler);
-    return () => window.removeEventListener('keydown', handler);
-  }, [selectedNodeId, setNodes, setEdges, clearSelection]);
+            if (!selectedNodeId) return;
+            if (event.key !== 'Delete' && event.key !== 'Backspace') return;
+
+            event.preventDefault();
+
+            setNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
+            setEdges((eds) =>
+                eds.filter(
+                    (e) => e.source !== selectedNodeId && e.target !== selectedNodeId
+                )
+            );
+
+            setSelectedNodeId(null);
+        };
+
+        window.addEventListener('keydown', handler);
+        return () => window.removeEventListener('keydown', handler);
+    }, [selectedNodeId, setNodes, setEdges, setSelectedNodeId]);
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -210,17 +281,8 @@ function GatePalette({ palette, onDragStart, onDragEnd }: GatePaletteProps) {
    Main canvas
    ────────────────────────────────────────────────────────────── */
 
-export default function CircuitCanvas() {
-  const { screenToFlowPosition } = useReactFlow();
-
-  const [nQubits, setNQubits] = useState(3);
-
-  const [nodes, setNodes, onNodesChangeBase] = useNodesState<Node>(
-    createRailNodes(3),
-  );
-  const [edges, setEdges, onEdgesChangeBase] = useEdgesState<Edge>(initialEdges);
-
-  const [selectedNodeId, setSelectedNodeId] = useState<string | null>(null);
+export function CircuitCanvas() {
+  const {screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId } = useCircuitContext(); 
   const [previewGate, setPreviewGate] = useState<PreviewGate | null>(null);
   const [dragKind, setDragKind] = useState<GateKind | null>(null);
 
@@ -231,15 +293,11 @@ export default function CircuitCanvas() {
 
   const handleSelectionChange = (params: SelectionChange) => {
     const gateNode = params.nodes.find((n) => n.type === 'gate');
-    setSelectedNodeId(gateNode ? gateNode.id : null);
+      setSelectedNodeId(gateNode ? gateNode.id : null);
+      console.log('Selection changed, selectedNodeId =', selectedNodeId);
   };
 
-  useDeleteSelectedGate(
-    selectedNodeId,
-    setNodes,
-    setEdges,
-    () => setSelectedNodeId(null),
-  );
+  useDeleteSelectedGate();
 
   // Rebuild rails when nQubits changes; drop gates on removed rails
   useEffect(() => {
@@ -481,116 +539,141 @@ const handleRun = () => {
 
   /* ------- render ------- */
 
-  return (
-    <div
-      style={{
-        width: '100vw',
-        height: '100vh',
-        background: '#050709',
-        position: 'relative',
-        overflow: 'hidden',
-      }}
-    >
-      {/* Qubit count + Run controls */}
-      <div
-        style={{
-          position: 'absolute',
-          top: 8,
-          left: 8,
-          background: 'rgba(0,0,0,0.5)',
-          padding: '6px 10px',
-          borderRadius: 6,
-          color: '#fff',
-          fontFamily: 'system-ui',
-          display: 'flex',
-          gap: 8,
-          alignItems: 'center',
-          zIndex: 10,
-        }}
-      >
-        <button
-          onClick={() => setNQubits((n) => Math.max(1, n - 1))}
-          style={{
-            padding: '2px 6px',
-            fontSize: 14,
-            cursor: 'pointer',
-            background: '#222',
-            border: '1px solid #444',
-            color: '#ddd',
-          }}
+    return (
+        <div
+            style={{
+                width: '100vw',
+                height: '100vh',
+                background: '#050709',
+                position: 'relative',
+                overflow: 'hidden',
+            }}
         >
-          –
-        </button>
+            {/* Two-column layout: left inputs, right canvas */}
+            <div
+                style={{
+                    display: 'grid',
+                    gridTemplateColumns: '260px 1fr', // left panel width, right fills
+                    width: '100%',
+                    height: '100%',
+                }}
+            >
+                {/* Left column: per-qubit input panel */}
+                <QubitInputsColumn />
 
-        <span>{nQubits} qubits</span>
+                {/* Right column: ReactFlow canvas + overlays */}
+                <div
+                    style={{
+                        position: 'relative',
+                        width: '100%',
+                        height: '100%',
+                    }}
+                >
+                    {/* Qubit count + Run controls (overlay inside right pane) */}
+                    <div
+                        style={{
+                            position: 'absolute',
+                            top: 8,
+                            left: 8,
+                            background: 'rgba(0,0,0,0.5)',
+                            padding: '6px 10px',
+                            borderRadius: 6,
+                            color: '#fff',
+                            fontFamily: 'system-ui',
+                            display: 'flex',
+                            gap: 8,
+                            alignItems: 'center',
+                            zIndex: 10,
+                        }}
+                    >
+                        <button
+                            onClick={() => setNQubits((n) => Math.max(1, n - 1))}
+                            style={{
+                                padding: '2px 6px',
+                                fontSize: 14,
+                                cursor: 'pointer',
+                                background: '#222',
+                                border: '1px solid #444',
+                                color: '#ddd',
+                            }}
+                        >
+                            –
+                        </button>
 
-        <button
-          onClick={() => setNQubits((n) => Math.min(4, n + 1))}
-          style={{
-            padding: '2px 6px',
-            fontSize: 14,
-            cursor: 'pointer',
-            background: '#222',
-            border: '1px solid #444',
-            color: '#ddd',
-          }}
-        >
-          +
-        </button>
+                        <span>{nQubits} qubits</span>
 
-        <button
-          onClick={handleRun}
-          style={{
-            marginLeft: 8,
-            padding: '2px 10px',
-            fontSize: 14,
-            cursor: 'pointer',
-            background: '#16a34a',
-            border: '1px solid #22c55e',
-            color: '#f9fafb',
-            borderRadius: 4,
-          }}
-        >
-          Run
-        </button>
-      </div>
+                        <button
+                            onClick={() => setNQubits((n) => Math.min(4, n + 1))}
+                            style={{
+                                padding: '2px 6px',
+                                fontSize: 14,
+                                cursor: 'pointer',
+                                background: '#222',
+                                border: '1px solid #444',
+                                color: '#ddd',
+                            }}
+                        >
+                            +
+                        </button>
 
-      {/* ReactFlow canvas */}
-      <div
-        style={{ width: '100%', height: '100%' }}
-        onDrop={handleDrop}
-        onDragOver={handleDragOver}
-        onDragLeave={handleDragLeave}
-      >
-        <ReactFlow
-          nodes={nodes}
-          edges={edges}
-          nodeTypes={nodeTypes}
-          onNodesChange={onNodesChange}
-          onEdgesChange={onEdgesChange}
-          onSelectionChange={handleSelectionChange}
-          onNodeDragStart={handleNodeDragStart}
-          onNodeDrag={handleNodeDrag}
-          onNodeDragStop={handleNodeDragStop}
-          fitView
-          elementsSelectable
-          panOnScroll={false}
-          zoomOnScroll={false}
-          zoomOnDoubleClick={false}
-          zoomOnPinch={false}
-          panOnDrag={false}
-        >
-          <Background color="#333" gap={24} />
-        </ReactFlow>
-      </div>
+                        <button
+                            onClick={handleRun}
+                            style={{
+                                marginLeft: 8,
+                                padding: '2px 10px',
+                                fontSize: 14,
+                                cursor: 'pointer',
+                                background: '#16a34a',
+                                border: '1px solid #22c55e',
+                                color: '#f9fafb',
+                                borderRadius: 4,
+                            }}
+                        >
+                            Run
+                        </button>
+                    </div>
 
-      <GhostPreview previewGate={previewGate} />
+                    {/* ReactFlow canvas */}
+                    <div
+                        style={{ width: '100%', height: '100%' }}
+                        onDrop={handleDrop}
+                        onDragOver={handleDragOver}
+                        onDragLeave={handleDragLeave}
+                    >
+                        <ReactFlow
+                            nodes={nodes}
+                            edges={edges}
+                            nodeTypes={nodeTypes}
+                            onNodesChange={onNodesChange}
+                            onEdgesChange={onEdgesChange}
+                            onSelectionChange={handleSelectionChange}
+                            onNodeDragStart={handleNodeDragStart}
+                            onNodeDrag={handleNodeDrag}
+                            onNodeDragStop={handleNodeDragStop}
+                            fitView
+                            elementsSelectable
+                            panOnScroll={false}
+                            zoomOnScroll={false}
+                            zoomOnDoubleClick={false}
+                            zoomOnPinch={false}
+                            panOnDrag={false}
+                        >
+                            <Background color="#333" gap={24} />
+                        </ReactFlow>
+                    </div>
 
-      <GatePalette
-        palette={GATE_PALETTE}
-        onDragStart={handlePaletteDragStart}
-        onDragEnd={handlePaletteDragEnd}
-      />
-    </div>
-  );
+                    {/* Ghost preview overlay (if it uses absolute/fixed itself) */}
+                    <GhostPreview previewGate={previewGate} />
+                </div>
+            </div>
+
+            {/* Bottom gate palette spanning full width of the outer container */}
+            <GatePalette
+                palette={GATE_PALETTE}
+                onDragStart={handlePaletteDragStart}
+                onDragEnd={handlePaletteDragEnd}
+            />
+        </div>
+    );
+
 }
