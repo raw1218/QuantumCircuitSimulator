@@ -55,6 +55,9 @@ function useCircuitState() {
         setNQubits((n) => n + 1);
         // update nodes here if needed
     }
+    // inside useCircuitState()
+    const [runProgress, setRunProgress] = useState<number | null>(null);
+
 
     const { qubitInputs, updateQubitInput, setQubitPreset } = useQubitInputs(nQubits);
     return {
@@ -73,6 +76,8 @@ function useCircuitState() {
         qubitInputs,
         updateQubitInput,
         setQubitPreset,
+        runProgress,
+        setRunProgress,
     };
 }
 
@@ -281,10 +286,61 @@ function GatePalette({ palette, onDragStart, onDragEnd }: GatePaletteProps) {
    Main canvas
    ────────────────────────────────────────────────────────────── */
 
+
+type RunHighlightProps = {
+    currentCol: number | null;
+    maxCols: number;
+    nQubits: number;
+};
+
+function RunHighlightOverlay({ currentCol, maxCols, nQubits }: RunHighlightProps) {
+    if (currentCol === null || maxCols <= 0) return null;
+
+    // We'll use colX to find the x-position of the current column.
+    const xStart = colX(0);
+    const xEnd = colX(currentCol);
+
+    // Height of the whole area is whatever the parent gives; we just use rowY for each rail.
+    return (
+        <svg
+            style={{
+                position: 'absolute',
+                inset: 0,
+                pointerEvents: 'none',
+            }}
+        >
+            {Array.from({ length: nQubits }).map((_, r) => {
+                const y = rowY(r);
+
+                return (
+                    <line
+                        key={r}
+                        x1={xStart}
+                        y1={y}
+                        x2={xEnd}
+                        y2={y}
+                        stroke="#38bdf8"
+                        strokeWidth={3}
+                        strokeLinecap="round"
+                        opacity={0.9}
+                    />
+                );
+            })}
+        </svg>
+    );
+}
+
+
+
 export function CircuitCanvas() {
-  const {screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId, qubitInputs} = useCircuitContext(); 
+  const {screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId, qubitInputs, runProgress, setRunProgress} = useCircuitContext(); 
   const [previewGate, setPreviewGate] = useState<PreviewGate | null>(null);
-  const [dragKind, setDragKind] = useState<GateKind | null>(null);
+    const [dragKind, setDragKind] = useState<GateKind | null>(null);
+    const [currentCol, setCurrentCol] = useState<number | null>(null);
+
+    const [isRunning, setIsRunning] = useState(false);
+    const [runMaxCols, setRunMaxCols] = useState(0);
+
 
   const dragStartPosRef = useRef<Record<string, { x: number; y: number }>>({});
 
@@ -520,9 +576,8 @@ function buildCircuitFromNodes(
 
         console.log('=== Quantum circuit ===');
         console.log(`nQubits = ${circuit.nQubits}, nCols = ${circuit.nCols}`);
-
-        // ===== Print circuit grid (your existing code) =====
         console.log('Grid (row x col):');
+
         circuit.grid.forEach((row, r) => {
             const prettyRow = row
                 .map((cell) => {
@@ -535,31 +590,50 @@ function buildCircuitFromNodes(
             console.log(`q${r}: ${prettyRow}`);
         });
 
-        // ===== Print initial qubit states =====
         console.log('\n=== Initial qubit states (from Bloch inputs) ===');
-
         qubitInputs.forEach((input, idx) => {
             const { theta, phi } = input;
 
-            // amplitudes
-            const alpha = Math.cos(theta / 2);                           // real
+            const alpha = Math.cos(theta / 2);
             const betaReal = Math.sin(theta / 2) * Math.cos(phi);
             const betaImag = Math.sin(theta / 2) * Math.sin(phi);
 
-            // pretty formatting helper
             const fmt = (x: number) => Number(x.toFixed(4));
 
             console.log(
-                `q${idx}: |ψ⟩ = ${fmt(alpha)}·|0⟩ + (${fmt(betaReal)} ${betaImag >= 0 ? '+' : '-'} ${fmt(
-                    Math.abs(betaImag)
-                )}i)·|1⟩`
+                `q${idx}: |ψ⟩ = ${fmt(alpha)}·|0⟩ + (${fmt(betaReal)} ${betaImag >= 0 ? '+' : '-'
+                } ${fmt(Math.abs(betaImag))}i)·|1⟩`
             );
         });
 
-        // ===== Raw circuit for debugging =====
         console.log('\nRaw circuit object:', circuit);
+
+        // ===== Start the animation =====
+        setRunMaxCols(circuit.nCols);
+        setRunProgress(0);
+        setIsRunning(true);
     };
 
+    useEffect(() => {
+        if (!isRunning || runMaxCols <= 0) return;
+
+        const durationMs = 2000; // total time to sweep left → right (tweak)
+        const start = performance.now();
+
+        const tick = (now: number) => {
+            const t = Math.min(1, (now - start) / durationMs);
+            setRunProgress(t);
+
+            if (t < 1) {
+                requestAnimationFrame(tick);
+            } else {
+                setIsRunning(false);
+            }
+        };
+
+        const id = requestAnimationFrame(tick);
+        return () => cancelAnimationFrame(id);
+    }, [isRunning, runMaxCols, setRunProgress]);
 
   /* ------- render ------- */
 

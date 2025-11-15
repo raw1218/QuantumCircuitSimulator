@@ -1,6 +1,9 @@
 // src/quantum/nodes.tsx
+import React from 'react';
 import type { NodeProps } from '@xyflow/react';
 import type { GateKind } from './model';
+import { useCircuitContext } from './circuitCanvas';
+import { COL_WIDTH, MAX_COLS } from './layout';
 
 // ===== Qubit label node (green box) =====
 export function QubitLabelNode(props: NodeProps) {
@@ -23,16 +26,44 @@ export function QubitLabelNode(props: NodeProps) {
 }
 
 // ===== Wire node (horizontal line) =====
-export function WireNode() {
+
+const TOTAL_WIRE_WIDTH = COL_WIDTH * MAX_COLS;
+
+export function WireNode(_: NodeProps) {
+    const { runProgress } = useCircuitContext();
+    const progress = runProgress ?? 0;
+
     return (
         <div
             style={{
-                width: '600px',
-                height: 0,
-                borderTop: '2px solid #ffffff',
-                pointerEvents: 'none',
+                position: 'relative',
+                width: `${TOTAL_WIRE_WIDTH}px`,
+                height: 4,
             }}
-        />
+        >
+            {/* Full wire background (now white) */}
+            <div
+                style={{
+                    position: 'absolute',
+                    inset: 0,
+                    background: '#ffffff',
+                    borderRadius: 999,
+                }}
+            />
+
+            {/* Filled part showing run progress */}
+            <div
+                style={{
+                    position: 'absolute',
+                    inset: 0,
+                    width: `${progress * 100}%`,
+                    background: '#38bdf8',
+                    borderRadius: 999,
+                    // NOTE: no transition here, so reset snaps instantly
+                    // transition: 'width 0.06s linear',
+                }}
+            />
+        </div>
     );
 }
 
@@ -69,15 +100,13 @@ export function GateGlyph({ kind, label, selected, isPreview }: GateGlyphProps) 
     const style = gateStyleFor(k);
     const text = label ?? k ?? '';
 
-    // Make preview VERY obvious
     const borderWidth = selected && !isPreview ? 3 : 2;
     const boxShadow =
         selected && !isPreview ? '0 0 8px rgba(129, 230, 217, 0.9)' : 'none';
 
-    // Preview style: dashed cyan border, transparent fill, low opacity
     const borderColor = isPreview ? '#22d3ee' : style.border;
     const bgColor = isPreview ? 'transparent' : style.bg;
-    const borderStyle = isPreview ? 'dashed' as const : 'solid' as const;
+    const borderStyle = (isPreview ? 'dashed' : 'solid') as const;
     const opacity = isPreview ? 0.7 : 1;
 
     return (
@@ -137,5 +166,3 @@ export const nodeTypes = {
     wire: WireNode,
     gate: GateNode,
 };
-
-
