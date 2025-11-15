@@ -1,6 +1,7 @@
-﻿// QubitInputsColumn.tsx
+﻿// qubitInputRender.tsx
 import React from 'react';
 import { useCircuitContext } from './circuitCanvas';
+import { QubitVisualization } from './QubitVisualization';
 
 function formatDegrees(rad: number): string {
     const deg = (rad * 180) / Math.PI;
@@ -62,78 +63,98 @@ export function QubitInputsColumn() {
                             border: '1px solid rgba(255, 255, 255, 0.08)',
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: 4,
+                            gap: 6,
                         }}
                     >
-                        {/* Header row: q index + presets */}
+                        {/* Top: controls */}
                         <div
                             style={{
                                 display: 'flex',
-                                justifyContent: 'space-between',
-                                alignItems: 'center',
+                                flexDirection: 'column',
+                                gap: 4,
                             }}
                         >
-                            <span style={{ fontWeight: 500 }}>q{index}</span>
+                            {/* Header row: q index + presets */}
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    alignItems: 'center',
+                                }}
+                            >
+                                <span style={{ fontWeight: 500 }}>q{index}</span>
 
-                            <div style={{ display: 'flex', gap: 4 }}>
-                                <PresetButton
-                                    label="|0⟩"
-                                    active={input.preset === 'zero'}
-                                    onClick={() => setQubitPreset(index, 'zero')}
-                                />
-                                <PresetButton
-                                    label="|1⟩"
-                                    active={input.preset === 'one'}
-                                    onClick={() => setQubitPreset(index, 'one')}
-                                />
-                                <PresetButton
-                                    label="|+⟩"
-                                    active={input.preset === 'plus'}
-                                    onClick={() => setQubitPreset(index, 'plus')}
-                                />
-                                <PresetButton
-                                    label="|-⟩"
-                                    active={input.preset === 'minus'}
-                                    onClick={() => setQubitPreset(index, 'minus')}
-                                />
+                                <div style={{ display: 'flex', gap: 4 }}>
+                                    <PresetButton
+                                        label="|0⟩"
+                                        active={input.preset === 'zero'}
+                                        onClick={() => setQubitPreset(index, 'zero')}
+                                    />
+                                    <PresetButton
+                                        label="|1⟩"
+                                        active={input.preset === 'one'}
+                                        onClick={() => setQubitPreset(index, 'one')}
+                                    />
+                                    <PresetButton
+                                        label="|+⟩"
+                                        active={input.preset === 'plus'}
+                                        onClick={() => setQubitPreset(index, 'plus')}
+                                    />
+                                    <PresetButton
+                                        label="|-⟩"
+                                        active={input.preset === 'minus'}
+                                        onClick={() => setQubitPreset(index, 'minus')}
+                                    />
+                                </div>
+                            </div>
+
+                            {/* Sliders for θ and φ */}
+                            <SliderRow
+                                label="θ"
+                                value={thetaDeg}
+                                min={0}
+                                max={180}
+                                onChange={(deg) =>
+                                    updateQubitInput(index, {
+                                        theta: (deg * Math.PI) / 180,
+                                    })
+                                }
+                            />
+
+                            <SliderRow
+                                label="φ"
+                                value={phiDeg}
+                                min={0}
+                                max={360}
+                                onChange={(deg) =>
+                                    updateQubitInput(index, {
+                                        phi: (deg * Math.PI) / 180,
+                                    })
+                                }
+                            />
+
+                            {/* numeric readout */}
+                            <div
+                                style={{
+                                    display: 'flex',
+                                    justifyContent: 'space-between',
+                                    opacity: 0.7,
+                                }}
+                            >
+                                <span>θ = {formatDegrees(input.theta)}°</span>
+                                <span>φ = {formatDegrees(input.phi)}°</span>
                             </div>
                         </div>
 
-                        {/* Sliders for θ and φ */}
-                        <SliderRow
-                            label="θ"
-                            value={thetaDeg}
-                            min={0}
-                            max={180}
-                            onChange={(deg) =>
-                                updateQubitInput(index, {
-                                    theta: (deg * Math.PI) / 180,
-                                })
-                            }
-                        />
-
-                        <SliderRow
-                            label="φ"
-                            value={phiDeg}
-                            min={0}
-                            max={360}
-                            onChange={(deg) =>
-                                updateQubitInput(index, {
-                                    phi: (deg * Math.PI) / 180,
-                                })
-                            }
-                        />
-
-                        {/* numeric readout */}
+                        {/* Bottom: Bloch sphere visualization, centered */}
                         <div
                             style={{
                                 display: 'flex',
-                                justifyContent: 'space-between',
-                                opacity: 0.7,
+                                justifyContent: 'center',
+                                marginTop: 4,
                             }}
                         >
-                            <span>θ = {formatDegrees(input.theta)}°</span>
-                            <span>φ = {formatDegrees(input.phi)}°</span>
+                            <QubitVisualization index={index} />
                         </div>
                     </div>
                 );

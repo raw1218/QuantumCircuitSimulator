@@ -282,7 +282,7 @@ function GatePalette({ palette, onDragStart, onDragEnd }: GatePaletteProps) {
    ────────────────────────────────────────────────────────────── */
 
 export function CircuitCanvas() {
-  const {screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId } = useCircuitContext(); 
+  const {screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId, qubitInputs} = useCircuitContext(); 
   const [previewGate, setPreviewGate] = useState<PreviewGate | null>(null);
   const [dragKind, setDragKind] = useState<GateKind | null>(null);
 
@@ -515,27 +515,51 @@ function buildCircuitFromNodes(
   return circuit;
 }
 
-const handleRun = () => {
-  const circuit = buildCircuitFromNodes(nodes, nQubits);
+    const handleRun = () => {
+        const circuit = buildCircuitFromNodes(nodes, nQubits);
 
-  console.log('=== Quantum circuit ===');
-  console.log(`nQubits = ${circuit.nQubits}, nCols = ${circuit.nCols}`);
-  console.log('Grid (row x col):');
+        console.log('=== Quantum circuit ===');
+        console.log(`nQubits = ${circuit.nQubits}, nCols = ${circuit.nCols}`);
 
-  circuit.grid.forEach((row, r) => {
-    const prettyRow = row
-      .map((cell) => {
-        if (!cell) return '.';
-        const k = cell.kind;
-        return k.length > 0 ? k[0] : '?';
-      })
-      .join('  ');
+        // ===== Print circuit grid (your existing code) =====
+        console.log('Grid (row x col):');
+        circuit.grid.forEach((row, r) => {
+            const prettyRow = row
+                .map((cell) => {
+                    if (!cell) return '.';
+                    const k = cell.kind;
+                    return k.length > 0 ? k[0] : '?';
+                })
+                .join('  ');
 
-    console.log(`q${r}: ${prettyRow}`);
-  });
+            console.log(`q${r}: ${prettyRow}`);
+        });
 
-  console.log('Raw circuit object:', circuit);
-};
+        // ===== Print initial qubit states =====
+        console.log('\n=== Initial qubit states (from Bloch inputs) ===');
+
+        qubitInputs.forEach((input, idx) => {
+            const { theta, phi } = input;
+
+            // amplitudes
+            const alpha = Math.cos(theta / 2);                           // real
+            const betaReal = Math.sin(theta / 2) * Math.cos(phi);
+            const betaImag = Math.sin(theta / 2) * Math.sin(phi);
+
+            // pretty formatting helper
+            const fmt = (x: number) => Number(x.toFixed(4));
+
+            console.log(
+                `q${idx}: |ψ⟩ = ${fmt(alpha)}·|0⟩ + (${fmt(betaReal)} ${betaImag >= 0 ? '+' : '-'} ${fmt(
+                    Math.abs(betaImag)
+                )}i)·|1⟩`
+            );
+        });
+
+        // ===== Raw circuit for debugging =====
+        console.log('\nRaw circuit object:', circuit);
+    };
+
 
   /* ------- render ------- */
 
