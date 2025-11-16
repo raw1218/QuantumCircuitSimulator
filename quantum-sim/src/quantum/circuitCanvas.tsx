@@ -21,7 +21,7 @@ import {
 
 import '@xyflow/react/dist/style.css';
 
-import { nodeTypes, GateGlyph } from './nodes';
+import { nodeTypes, GateGlyph, type GateData, GateNode } from './nodes';
 import { initialEdges } from './scene';
 import {
   GATE_Y_OFFSET,
@@ -67,6 +67,8 @@ function useCircuitState() {
 
     const [selectedNodeKind, setSelectedNodeKind] = useState<GateKind | null>(null);
     const [isPlacingCNOTParter, setIsPlacingCNOTParter] = useState(false);
+    const [CNOTPartnerRow, setCNOTPartnerRow] = useState<number | null>(null);
+    const [CNOTPartnerCol, setCNOTPartnerCol] = useState<number | null>(null);
 
 
 
@@ -99,6 +101,10 @@ function useCircuitState() {
         setSelectedNodeKind,
         isPlacingCNOTParter,
         setIsPlacingCNOTParter,
+        CNOTPartnerRow,
+        setCNOTPartnerRow,
+        CNOTPartnerCol,
+        setCNOTPartnerCol,
     };
 }
 
@@ -160,6 +166,9 @@ type PreviewGate = {
   row: number;
   col: number;
   kind: GateKind;
+  hasPartner?: boolean;
+  partnerRow?: number | null;
+  partnerCol?: number | null;
 };
 
 /* ──────────────────────────────────────────────────────────────
@@ -246,25 +255,49 @@ type GhostPreviewProps = {
   previewGate: PreviewGate | null;
 };
 
-function GhostPreview({ previewGate }: GhostPreviewProps) {
-  if (!previewGate) return null;
 
-  return (
-    <ViewportPortal>
-      <div
-        style={{
-          position: 'absolute',
-          transform: `translate(${colX(previewGate.col)}px, ${
-            rowY(previewGate.row) - GATE_Y_OFFSET
-          }px)`,
-          pointerEvents: 'none',
-        }}
-      >
-        <GateGlyph kind={previewGate.kind} isPreview />
-      </div>
-    </ViewportPortal>
-  );
+function GhostPreview({ previewGate }: GhostPreviewProps) {
+    const {
+        isPlacingCNOTParter,
+        CNOTPartnerRow,
+        CNOTPartnerCol,
+    } = useCircuitContext();
+
+    if (!previewGate) return null;
+
+    // Are we previewing the *second* half of a CNOT pair?
+    const isCnotPreview = previewGate.kind === 'CNOT';
+    const hasPartner =
+        isCnotPreview &&
+        isPlacingCNOTParter &&
+        typeof CNOTPartnerRow === 'number' &&
+        typeof CNOTPartnerCol === 'number';
+
+    return (
+        <ViewportPortal>
+            <div
+                style={{
+                    position: 'absolute',
+                    transform: `translate(${colX(previewGate.col)}px, ${rowY(previewGate.row) - GATE_Y_OFFSET
+                        }px)`,
+                    pointerEvents: 'none',
+                }}
+            >
+                <GateGlyph
+                    kind={previewGate.kind}
+                    isPreview
+                    // partner info for preview line
+                    hasPartner={hasPartner}
+                    row={previewGate.row}
+                    col={previewGate.col}
+                    partnerRow={hasPartner ? CNOTPartnerRow! : undefined}
+                    partnerCol={hasPartner ? CNOTPartnerCol! : undefined}
+                />
+            </div>
+        </ViewportPortal>
+    );
 }
+
 
 type GatePaletteProps = {
     palette: GateKind[];
@@ -385,7 +418,7 @@ function RunHighlightOverlay({ currentCol, maxCols, nQubits }: RunHighlightProps
 
 
 export function CircuitCanvas() {
-    const { screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId, qubitInputs, runProgress, setRunProgress, currentCol, setCurrentCol, isRunning, setIsRunning, runMaxCols, setRunMaxCols, selectedNodeKind, setSelectedNodeKind, isPlacingCNOTParter, setIsPlacingCNOTParter} = useCircuitContext();
+    const { screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId, qubitInputs, runProgress, setRunProgress, currentCol, setCurrentCol, isRunning, setIsRunning, runMaxCols, setRunMaxCols, selectedNodeKind, setSelectedNodeKind, isPlacingCNOTParter, setIsPlacingCNOTParter, CNOTPartnerRow, setCNOTPartnerRow, CNOTPartnerCol,setCNOTPartnerCol} = useCircuitContext();
     const [previewGate, setPreviewGate] = useState<PreviewGate | null>(null);
 
 
@@ -424,15 +457,25 @@ export function CircuitCanvas() {
         const ySnapped = rowY(row);
         const newId = `gate-${kind}-${Date.now()}`;
 
+        let node_has_partner = false;
+        let reset_at_end = true;
+
         if (kind == 'CNOT') {
+            console.log('Placed CNOT. isPlacingCnot partner = ', isPlacingCNOTParter);
             if (!isPlacingCNOTParter) {
                 setIsPlacingCNOTParter(true);
+                setSelectedNodeKind('CNOT');
+                setCNOTPartnerRow(row);
+                setCNOTPartnerCol(col);
+                console.log('setSelectedNode Kind to ', selectedNodeKind);
+                reset_at_end = false;
             }
             else {
                 setIsPlacingCNOTParter(false);
+                node_has_partner = true;
+                console.log('placing parter, row = ', CNOTPartnerRow, ' col = ', CNOTPartnerCol);
             }
         }
-        
 
 
         setNodes((nds) => {
@@ -446,8 +489,12 @@ export function CircuitCanvas() {
                 data: {
                     kind,
                     label: kind,
-                    col,   // 👈<<< save column index
-                    row,   // (optional, handy later for picking which qubit’s Bloch sphere)
+                    col,   
+                    row,  
+                    hasPartner: node_has_partner,
+                    partnerRow: node_has_partner ? CNOTPartnerRow! : undefined,
+                    partnerCol: node_has_partner ? CNOTPartnerCol! : undefined,
+                 
                 },
                 draggable: true,
                 selected: true,
@@ -456,8 +503,13 @@ export function CircuitCanvas() {
             return cleared.concat(newNode);
         });
 
-        setSelectedNodeKind(null);
-        setPreviewGate(null);
+
+
+
+        if (reset_at_end) {
+            setSelectedNodeKind(null);
+            setPreviewGate(null);
+        }
     }
 
 
@@ -481,7 +533,7 @@ export function CircuitCanvas() {
         if (isCellOccupied(nodes, row, col)) {
             setPreviewGate(null);
         } else {
-            setPreviewGate({ row, col, kind: selectedNodeKind });
+            setPreviewGate({ row, col, kind: selectedNodeKind, hasPartner: isPlacingCNOTParter ? true : false, partnerRow : CNOTPartnerRow, partnerCol : CNOTPartnerCol });
         }
     };
 
@@ -636,7 +688,6 @@ export function CircuitCanvas() {
     };
 
     const handlePaletteDragEnd = () => {
-        setSelectedNodeKind(null);
         setPreviewGate(null);
     };
 

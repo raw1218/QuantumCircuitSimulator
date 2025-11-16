@@ -3,7 +3,7 @@ import React from 'react';
 import type { NodeProps } from '@xyflow/react';
 import type { GateKind } from './model';
 import { useCircuitContext } from './circuitCanvas';
-import { COL_WIDTH, MAX_COLS } from './layout';
+import { COL_WIDTH, MAX_COLS, ROW_HEIGHT } from './layout';
 import { QubitVisualization } from './qubitVisualization';
 
 // ===== Qubit label node (green box) =====
@@ -76,14 +76,18 @@ export function WireNode(props: NodeProps) {
         </div>
     );
 }
-
-// ===== Gate glyph (shared between canvas & palette) =====
-
 type GateGlyphProps = {
     kind: GateKind | string;
     label?: string;
     selected?: boolean;
     isPreview?: boolean;
+
+    // partner info (optional)
+    hasPartner?: boolean;
+    row?: number;
+    col?: number;
+    partnerRow?: number;
+    partnerCol?: number;
 };
 
 function gateStyleFor(kind: string | undefined) {
@@ -105,7 +109,17 @@ function gateStyleFor(kind: string | undefined) {
     }
 }
 
-export function GateGlyph({ kind, label, selected, isPreview }: GateGlyphProps) {
+export function GateGlyph({
+    kind,
+    label,
+    selected,
+    isPreview,
+    hasPartner,
+    row,
+    col,
+    partnerRow,
+    partnerCol,
+}: GateGlyphProps) {
     const k = typeof kind === 'string' ? kind : '';
     const style = gateStyleFor(k);
 
@@ -118,52 +132,131 @@ export function GateGlyph({ kind, label, selected, isPreview }: GateGlyphProps) 
     const borderStyle = isPreview ? 'dashed' : 'solid';
     const opacity = isPreview ? 0.7 : 1;
 
-    // ❗ 40 → normal size, 60 wide for MEASURE
     const width = k === 'MEASURE' ? 70 : 40;
     const height = 40;
 
-    // If MEASURE and no custom label, render "MEASURE"
     const text =
         k === 'MEASURE'
             ? (label ?? 'MEASURE')
             : (label ?? k ?? '');
 
+    // ─────────────────────────────────────────────
+    // Partner connector (line + arrow) based on grid data
+    // ─────────────────────────────────────────────
+    const hasValidPartner =
+        !!hasPartner &&
+        typeof row === 'number' &&
+        typeof col === 'number' &&
+        typeof partnerRow === 'number' &&
+        typeof partnerCol === 'number' &&
+        (partnerRow !== row || partnerCol !== col);
+
+    let connector: JSX.Element | null = null;
+
+    if (hasValidPartner) {
+        const dx = (partnerCol! - col!) * COL_WIDTH;
+        const dy = (partnerRow! - row!) * ROW_HEIGHT;
+
+        const length = Math.sqrt(dx * dx + dy * dy);
+        const angleDeg = Math.atan2(dy, dx) * (180 / Math.PI);
+
+        const lineColor = isPreview ? '#22d3ee' : '#8b5cf6';
+
+        // Outer rotated container (behind the gate box)
+        const connectorStyle: React.CSSProperties = {
+            position: 'absolute',
+            left: width / 2,
+            top: height / 2,
+            width: length,
+            height: 0,
+            transformOrigin: '0 50%',
+            transform: `rotate(${angleDeg}deg)`,
+            pointerEvents: 'none',
+            zIndex: 0,
+        };
+
+        const lineStyle: React.CSSProperties = {
+            position: 'absolute',
+            left: 0,
+            top: -1,
+            width: '100%',
+            height: 2,
+            background: lineColor,
+            borderRadius: 999,
+        };
+
+        const arrowStyle: React.CSSProperties = {
+            position: 'absolute',
+            left: '50%',
+            top: -5, // center vertically over the line
+            width: 0,
+            height: 0,
+            borderRight: `7px solid ${lineColor}`,      // pointing "right" in local space
+            borderTop: '4px solid transparent',
+            borderBottom: '4px solid transparent',
+        };
+
+        connector = (
+            <div style={connectorStyle}>
+                <div style={lineStyle} />
+                <div style={arrowStyle} />
+            </div>
+        );
+    }
+
     return (
         <div
             style={{
+                position: 'relative',
                 width,
                 height,
-                borderRadius: 4,
-                borderWidth,
-                borderColor,
-                borderStyle,
-                background: bgColor,
-                color: '#000',
-                fontSize: 16, 
-                fontFamily: 'monospace',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                boxSizing: 'border-box',
-                boxShadow,
-                opacity,
-                whiteSpace: 'nowrap',
+                // this wrapper has no background; the box is a child so the line can sit behind it
+                overflow: 'visible',
             }}
         >
-            {text}
+            {/* line + arrow BEHIND */}
+            {connector}
+
+            {/* foreground gate box */}
+            <div
+                style={{
+                    position: 'relative',
+                    zIndex: 1,
+                    width: '100%',
+                    height: '100%',
+                    borderRadius: 4,
+                    borderWidth,
+                    borderColor,
+                    borderStyle,
+                    background: bgColor,
+                    color: '#000',
+                    fontSize: 16,
+                    fontFamily: 'monospace',
+                    boxSizing: 'border-box',
+                    boxShadow,
+                    opacity,
+                    whiteSpace: 'nowrap',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                }}
+            >
+                {text}
+            </div>
         </div>
     );
 }
 
-
-// ===== Gate node (used by ReactFlow) =====
-type GateData = {
+export type GateData = {
     label?: string;
     kind?: string;
     isPreview?: boolean;
     col?: number;            // 0-based column index
-    row?: number;            // optional, for later
-    measureOutcome?: 0 | 1;  // for later
+    row?: number;
+    measureOutcome?: 0 | 1;
+    hasPartner?: boolean;
+    partnerRow?: number;
+    partnerCol?: number;
 };
 
 export function GateNode(props: NodeProps) {
@@ -171,10 +264,9 @@ export function GateNode(props: NodeProps) {
     const kind = data.kind ?? '';
     const isPreview = !!data.isPreview;
 
-    const { runProgress, setCurrentCol, currentCol } = useCircuitContext();
-
-    // text inside gate
     const innerLabel = data.label ?? kind ?? '';
+
+    const { runProgress } = useCircuitContext();
 
     const gateCol =
         typeof data.col === 'number' && Number.isFinite(data.col)
@@ -182,27 +274,16 @@ export function GateNode(props: NodeProps) {
             : null;
 
     let isActive = false;
-
     if (!isPreview && runProgress != null && gateCol !== null && MAX_COLS > 0) {
-        // current highlighted column 0..MAX_COLS-1
         const scanCol = Math.min(
             MAX_COLS - 1,
-            Math.floor(runProgress * MAX_COLS)
+            Math.floor(runProgress * MAX_COLS),
         );
-
-
         isActive = scanCol >= gateCol;
-        // If you want visibility:
     }
 
     return (
-        <div
-            style={{
-                position: 'relative',
-                display: 'inline-block',
-            }}
-        >
-
+        <div style={{ position: 'relative', display: 'inline-block' }}>
             {isActive && kind === 'MEASURE' && (
                 <div
                     style={{
@@ -216,11 +297,10 @@ export function GateNode(props: NodeProps) {
                         background: 'rgba(15,23,42,0.95)',
                         color: '#4ade80',
                         fontSize: 10,
-                        textAlign: 'center',
                         pointerEvents: 'none',
                     }}
                 >
-                    0 {/* hard-coded for now */}
+                    0
                 </div>
             )}
 
@@ -229,6 +309,11 @@ export function GateNode(props: NodeProps) {
                 label={innerLabel}
                 selected={props.selected}
                 isPreview={isPreview}
+                hasPartner={data.hasPartner}
+                row={data.row}
+                col={data.col}
+                partnerRow={data.partnerRow}
+                partnerCol={data.partnerCol}
             />
         </div>
     );
