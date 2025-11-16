@@ -4,9 +4,13 @@ import { useCircuitContext } from './circuitCanvas';
 
 type QubitVisualizationProps = {
     index: number;
+    size?: number; // optional, default to 90
 };
 
-export const QubitVisualization: React.FC<QubitVisualizationProps> = ({ index }) => {
+export const QubitVisualization: React.FC<QubitVisualizationProps> = ({
+    index,
+    size: sizeProp,
+}) => {
     const { qubitInputs } = useCircuitContext();
     const input = qubitInputs[index];
     if (!input) return null;
@@ -20,10 +24,10 @@ export const QubitVisualization: React.FC<QubitVisualizationProps> = ({ index })
     const y = Math.sin(theta) * Math.sin(phi);
     const z = Math.cos(theta);
 
-    const size = 90;
+    const size = sizeProp ?? 90;
     const cx = size / 2;
     const cy = size / 2;
-    const radius = 30;
+    const radius = size * (30 / 90); // scale radius with size (was 30 when size=90)
 
     // Project (x, z) into 2D: x horizontal, z vertical
     const endX = cx + x * radius;
@@ -31,22 +35,24 @@ export const QubitVisualization: React.FC<QubitVisualizationProps> = ({ index })
 
     const deg = (rad: number) => (rad * 180) / Math.PI;
 
+    const gradId = `blochSphereGrad-${index}`;
+
     return (
         <div
             style={{
                 display: 'flex',
                 flexDirection: 'column',
                 gap: 4,
-                fontSize: 12,
+                fontSize: 11,
                 color: '#eee',
                 alignItems: 'center',
-                minWidth: size,
+                // no minWidth so it can shrink inside the left column
             }}
         >
             {/* Label + θ, φ */}
             <div
                 style={{
-                    fontSize: 11,
+                    fontSize: 10,
                     opacity: 0.75,
                 }}
             >
@@ -61,7 +67,7 @@ export const QubitVisualization: React.FC<QubitVisualizationProps> = ({ index })
             >
                 <defs>
                     {/* Radial gradient for fake 3D shading */}
-                    <radialGradient id="blochSphereGrad" cx="30%" cy="30%" r="70%">
+                    <radialGradient id={gradId} cx="30%" cy="30%" r="70%">
                         <stop offset="0%" stopColor="#1e293b" />
                         <stop offset="70%" stopColor="#020617" />
                         <stop offset="100%" stopColor="#000000" />
@@ -73,7 +79,7 @@ export const QubitVisualization: React.FC<QubitVisualizationProps> = ({ index })
                     cx={cx}
                     cy={cy}
                     r={radius}
-                    fill="url(#blochSphereGrad)"
+                    fill={`url(#${gradId})`}
                     stroke="rgba(148, 163, 184, 0.9)"
                     strokeWidth={1}
                 />
@@ -100,7 +106,7 @@ export const QubitVisualization: React.FC<QubitVisualizationProps> = ({ index })
                     strokeWidth={0.6}
                 />
 
-                {/* A couple of extra "latitude" lines for 3D grid feel */}
+                {/* Extra "latitude" lines for 3D grid feel */}
                 <ellipse
                     cx={cx}
                     cy={cy - radius * 0.3}
@@ -178,7 +184,7 @@ export const QubitVisualization: React.FC<QubitVisualizationProps> = ({ index })
                     display: 'flex',
                     justifyContent: 'space-between',
                     gap: 6,
-                    fontSize: 10,
+                    fontSize: 9,
                     opacity: 0.8,
                 }}
             >

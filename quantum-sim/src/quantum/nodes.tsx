@@ -1,4 +1,4 @@
-// src/quantum/nodes.tsx
+﻿// src/quantum/nodes.tsx
 import React from 'react';
 import type { NodeProps } from '@xyflow/react';
 import type { GateKind } from './model';
@@ -98,7 +98,6 @@ function gateStyleFor(kind: string | undefined) {
 export function GateGlyph({ kind, label, selected, isPreview }: GateGlyphProps) {
     const k = typeof kind === 'string' ? kind : '';
     const style = gateStyleFor(k);
-    const text = label ?? k ?? '';
 
     const borderWidth = selected && !isPreview ? 3 : 2;
     const boxShadow =
@@ -106,21 +105,31 @@ export function GateGlyph({ kind, label, selected, isPreview }: GateGlyphProps) 
 
     const borderColor = isPreview ? '#22d3ee' : style.border;
     const bgColor = isPreview ? 'transparent' : style.bg;
-    const borderStyle = (isPreview ? 'dashed' : 'solid') as const;
+    const borderStyle = isPreview ? 'dashed' : 'solid';
     const opacity = isPreview ? 0.7 : 1;
+
+    // ❗ 40 → normal size, 60 wide for MEASURE
+    const width = k === 'MEASURE' ? 70 : 40;
+    const height = 40;
+
+    // If MEASURE and no custom label, render "MEASURE"
+    const text =
+        k === 'MEASURE'
+            ? (label ?? 'MEASURE')
+            : (label ?? k ?? '');
 
     return (
         <div
             style={{
-                width: 40,
-                height: 40,
+                width,
+                height,
                 borderRadius: 4,
                 borderWidth,
                 borderColor,
                 borderStyle,
                 background: bgColor,
-                color: '#000000',
-                fontSize: 16,
+                color: '#000',
+                fontSize: 16, 
                 fontFamily: 'monospace',
                 display: 'flex',
                 alignItems: 'center',
@@ -128,6 +137,7 @@ export function GateGlyph({ kind, label, selected, isPreview }: GateGlyphProps) 
                 boxSizing: 'border-box',
                 boxShadow,
                 opacity,
+                whiteSpace: 'nowrap',
             }}
         >
             {text}
@@ -135,29 +145,76 @@ export function GateGlyph({ kind, label, selected, isPreview }: GateGlyphProps) 
     );
 }
 
+
 // ===== Gate node (used by ReactFlow) =====
 
-type GateData = { label?: string; kind?: string; isPreview?: boolean };
+
+type GateData = {
+    label?: string;
+    kind?: string;
+    isPreview?: boolean;
+    measureOutcome?: 0 | 1; // for later, when you hook up real logic
+};
 
 export function GateNode(props: NodeProps) {
     const data = props.data as GateData;
     const kind = data.kind ?? '';
-    const label = data.label ?? kind ?? '';
     const isPreview = !!data.isPreview;
 
-    if (isPreview) {
-        console.log('Rendering PREVIEW gate node', { id: props.id, kind, label });
-    }
+    // what goes INSIDE the square
+    let innerLabel = data.label ?? kind ?? '';
+
+
+    // for later: you can set this from your sim
+    const outcome = data.measureOutcome;
 
     return (
-        <GateGlyph
-            kind={kind}
-            label={label}
-            selected={props.selected}
-            isPreview={isPreview}
-        />
+        <div
+            style={{
+                position: 'relative',
+                display: 'inline-block',
+            }}
+        >
+            {kind === 'MEASURE' && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        top: -14,                 // float above the gate
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        minWidth: 16,
+                        padding: '1px 5px',
+                        borderRadius: 999,
+                        border: '1px solid rgba(248, 250, 252, 0.4)',
+                        background:
+                            outcome === 0 || outcome === 1
+                                ? 'rgba(15,23,42,0.95)'
+                                : 'rgba(15,23,42,0.5)',
+                        color:
+                            outcome === 1
+                                ? '#f97373'
+                                : outcome === 0
+                                    ? '#4ade80'
+                                    : 'rgba(226,232,240,0.8)',
+                        fontSize: 9,
+                        textAlign: 'center',
+                        pointerEvents: 'none',
+                    }}
+                >
+                    {outcome === 0 || outcome === 1 ? outcome : '?'}
+                </div>
+            )}
+
+            <GateGlyph
+                kind={kind}
+                label={innerLabel}
+                selected={props.selected}
+                isPreview={isPreview}
+            />
+        </div>
     );
 }
+
 
 // ===== Node type map for ReactFlow =====
 

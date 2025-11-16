@@ -3,11 +3,6 @@ import React from 'react';
 import { useCircuitContext } from './circuitCanvas';
 import { QubitVisualization } from './QubitVisualization';
 
-function formatDegrees(rad: number): string {
-    const deg = (rad * 180) / Math.PI;
-    return deg.toFixed(0);
-}
-
 export function QubitInputsColumn() {
     const {
         nQubits,
@@ -16,22 +11,20 @@ export function QubitInputsColumn() {
         setQubitPreset,
     } = useCircuitContext();
 
-    if (!qubitInputs || qubitInputs.length === 0) {
-        return null;
-    }
+    if (!qubitInputs || qubitInputs.length === 0) return null;
 
     return (
         <div
             style={{
                 display: 'flex',
                 flexDirection: 'column',
-                gap: 8,
-                padding: '8px 12px',
+                gap: 6,
+                padding: '6px 8px',
                 borderRight: '1px solid #222',
                 background: 'rgba(5, 7, 9, 0.95)',
                 color: '#eee',
                 fontFamily: 'system-ui, sans-serif',
-                fontSize: 12,
+                fontSize: 11,
                 height: '100%',
                 boxSizing: 'border-box',
             }}
@@ -39,8 +32,8 @@ export function QubitInputsColumn() {
             <div
                 style={{
                     fontWeight: 600,
-                    fontSize: 13,
-                    marginBottom: 4,
+                    fontSize: 12,
+                    marginBottom: 2,
                 }}
             >
                 Qubit Inputs
@@ -57,24 +50,18 @@ export function QubitInputsColumn() {
                     <div
                         key={index}
                         style={{
-                            padding: '6px 8px',
-                            borderRadius: 6,
+                            padding: '5px 6px',
+                            borderRadius: 5,
                             background: 'rgba(255, 255, 255, 0.02)',
                             border: '1px solid rgba(255, 255, 255, 0.08)',
                             display: 'flex',
                             flexDirection: 'column',
-                            gap: 6,
+                            gap: 4,
                         }}
                     >
-                        {/* Top: controls */}
-                        <div
-                            style={{
-                                display: 'flex',
-                                flexDirection: 'column',
-                                gap: 4,
-                            }}
-                        >
-                            {/* Header row: q index + presets */}
+                        {/* Top controls */}
+                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
+                            {/* Header row */}
                             <div
                                 style={{
                                     display: 'flex',
@@ -82,9 +69,9 @@ export function QubitInputsColumn() {
                                     alignItems: 'center',
                                 }}
                             >
-                                <span style={{ fontWeight: 500 }}>q{index}</span>
+                                <span style={{ fontWeight: 500, fontSize: 11 }}>q{index}</span>
 
-                                <div style={{ display: 'flex', gap: 4 }}>
+                                <div style={{ display: 'flex', gap: 3 }}>
                                     <PresetButton
                                         label="|0⟩"
                                         active={input.preset === 'zero'}
@@ -108,7 +95,7 @@ export function QubitInputsColumn() {
                                 </div>
                             </div>
 
-                            {/* Sliders for θ and φ */}
+                            {/* Sliders */}
                             <SliderRow
                                 label="θ"
                                 value={thetaDeg}
@@ -132,29 +119,17 @@ export function QubitInputsColumn() {
                                     })
                                 }
                             />
-
-                            {/* numeric readout */}
-                            <div
-                                style={{
-                                    display: 'flex',
-                                    justifyContent: 'space-between',
-                                    opacity: 0.7,
-                                }}
-                            >
-                                <span>θ = {formatDegrees(input.theta)}°</span>
-                                <span>φ = {formatDegrees(input.phi)}°</span>
-                            </div>
                         </div>
 
-                        {/* Bottom: Bloch sphere visualization, centered */}
+                        {/* Smaller Bloch sphere */}
                         <div
                             style={{
                                 display: 'flex',
                                 justifyContent: 'center',
-                                marginTop: 4,
+                                marginTop: 2,
                             }}
                         >
-                            <QubitVisualization index={index} />
+                            <QubitVisualization index={index} size={85} />
                         </div>
                     </div>
                 );
@@ -175,12 +150,12 @@ function PresetButton({ label, active, onClick }: PresetButtonProps) {
             type="button"
             onClick={onClick}
             style={{
-                padding: '2px 6px',
-                borderRadius: 4,
+                padding: '1px 4px',
+                borderRadius: 3,
                 border: active ? '1px solid #4fc3f7' : '1px solid #444',
                 background: active ? 'rgba(79, 195, 247, 0.2)' : 'rgba(255, 255, 255, 0.04)',
                 color: '#eee',
-                fontSize: 11,
+                fontSize: 10,
                 cursor: 'pointer',
             }}
         >
@@ -203,10 +178,10 @@ function SliderRow({ label, value, min, max, onChange }: SliderRowProps) {
             style={{
                 display: 'flex',
                 alignItems: 'center',
-                gap: 6,
+                gap: 4,
             }}
         >
-            <span style={{ width: 12 }}>{label}</span>
+            <span style={{ width: 12, fontSize: 10 }}>{label}</span>
             <input
                 type="range"
                 min={min}
@@ -215,7 +190,7 @@ function SliderRow({ label, value, min, max, onChange }: SliderRowProps) {
                 onChange={(e) => onChange(Number(e.target.value))}
                 style={{ flex: 1 }}
             />
-            <span style={{ width: 34, textAlign: 'right', opacity: 0.8 }}>
+            <span style={{ width: 28, textAlign: 'right', opacity: 0.8, fontSize: 10 }}>
                 {value.toFixed(0)}°
             </span>
         </label>

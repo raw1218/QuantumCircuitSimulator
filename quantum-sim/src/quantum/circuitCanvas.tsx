@@ -755,6 +755,8 @@ function buildCircuitFromNodes(
                             zoomOnDoubleClick={false}
                             zoomOnPinch={false}
                             panOnDrag={false}
+                            autoPanOnNodeDrag={false}    
+                            autoPanOnConnect={false}        
                         >
                             <Background color="#333" gap={24} />
                         </ReactFlow>
