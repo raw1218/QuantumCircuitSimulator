@@ -417,6 +417,118 @@ function RunHighlightOverlay({ currentCol, maxCols, nQubits }: RunHighlightProps
 
 
 
+type LeftPanelProps = {
+    probs: number[];
+};
+
+function LeftPanel({ probs }: LeftPanelProps) {
+    return (
+        <div
+            style={{
+                width: '100%',
+                height: '100%',
+                boxSizing: 'border-box',
+                padding: '8px 12px',
+                background: '#020617',
+                borderRight: '1px solid #111827',
+                display: 'flex',
+                flexDirection: 'column',
+                overflowY: 'auto',   // 👈 scroll when it overflows
+                minHeight: 0,        // 👈 important inside flex/grid
+            }}
+        >
+            <QubitInputsColumn probs={probs} />
+        </div>
+    );
+}
+function BottomPanel({
+    nQubits,
+    onDecQubits,
+    onIncQubits,
+    onRun,
+    onPaletteDragStart,
+    onPaletteDragEnd,
+}: BottomPanelProps) {
+    return (
+        <div
+            style={{
+                width: '100%',
+                background: 'rgba(5,7,9,0.9)',
+                display: 'flex',
+                alignItems: 'center',
+                gap: 16,
+                padding: '8px 16px',
+                borderTop: '1px solid #222',
+                boxSizing: 'border-box',
+            }}
+        >
+            <GatePalette
+                palette={GATE_PALETTE}
+                onDragStart={onPaletteDragStart}
+                onDragEnd={onPaletteDragEnd}
+            />
+
+            <div
+                style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    background: 'rgba(0,0,0,0.5)',
+                    padding: '6px 10px',
+                    borderRadius: 6,
+                    color: '#fff',
+                }}
+            >
+                <button
+                    onClick={onDecQubits}
+                    style={{
+                        padding: '2px 6px',
+                        background: '#222',
+                        border: '1px solid #444',
+                        color: '#ddd',
+                        cursor: 'pointer',
+                    }}
+                >
+                    –
+                </button>
+
+                <span>{nQubits} qubits</span>
+
+                <button
+                    onClick={onIncQubits}
+                    style={{
+                        padding: '2px 6px',
+                        background: '#222',
+                        border: '1px solid #444',
+                        color: '#ddd',
+                        cursor: 'pointer',
+                    }}
+                >
+                    +
+                </button>
+
+                <button
+                    onClick={onRun}
+                    style={{
+                        marginLeft: 8,
+                        padding: '2px 10px',
+                        fontSize: 14,
+                        cursor: 'pointer',
+                        background: '#16a34a',
+                        border: '1px solid #22c55e',
+                        color: '#f9fafb',
+                        borderRadius: 4,
+                    }}
+                >
+                    Run
+                </button>
+            </div>
+        </div>
+    );
+}
+
+
+
 export function CircuitCanvas() {
     const { screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId, qubitInputs, runProgress, setRunProgress, currentCol, setCurrentCol, isRunning, setIsRunning, runMaxCols, setRunMaxCols, selectedNodeKind, setSelectedNodeKind, isPlacingCNOTParter, setIsPlacingCNOTParter, CNOTPartnerRow, setCNOTPartnerRow, CNOTPartnerCol,setCNOTPartnerCol} = useCircuitContext();
     const [previewGate, setPreviewGate] = useState<PreviewGate | null>(null);
@@ -807,179 +919,107 @@ export function CircuitCanvas() {
         const idx = currentCol % dim;
         return i === idx ? 1 : 0;
     });
-    return (
+  return (
+    <div
+        style={{
+            width: '100vw',
+            height: '100vh',
+            background: '#050709',
+            display: 'flex',
+            flexDirection: 'column',
+        }}
+    >
+        {/* MAIN AREA: fills remaining height above bottom panel */}
         <div
             style={{
-                width: '100vw',
-                height: '100vh',
-                background: '#050709',
-                position: 'relative',
+                flex: 1,
+                display: 'grid',
+                gridTemplateColumns: '260px 1fr',
+                width: '100%',
+                minHeight: 0, // allow children to shrink and scroll
             }}
         >
-            {/* Two-column layout: left inputs, right canvas */}
+            {/* LEFT: Inputs (scrollable) */}
+            <LeftPanel probs={mockProbs} />
+
+            {/* RIGHT: ReactFlow + global-state band */}
             <div
                 style={{
-                    display: 'grid',
-                    gridTemplateColumns: '260px 1fr',
+                    position: 'relative',
                     width: '100%',
                     height: '100%',
+                    minHeight: 0,
                 }}
             >
-                {/* LEFT: Inputs */}
-                <QubitInputsColumn probs={mockProbs} />
-
-                {/* RIGHT: ReactFlow + global-state band */}
                 <div
-                    style={{
-                        position: 'relative',
-                        width: '100%',
-                        height: '100%',
-                    }}
+                    style={{ width: '100%', height: '100%' }}
+                    onDrop={handleDrop}
+                    onDragOver={handleDragOver}
+                    onDragLeave={handleDragLeave}
+                    onMouseMove={handleCanvasMouseMove}
+                    onClick={handleCanvasClick}
+                    onMouseLeave={() => setPreviewGate(null)}
                 >
-                    <div
-                        style={{ width: '100%', height: '100%' }}
-                        onDrop={handleDrop}
-                        onDragOver={handleDragOver}
-                        onDragLeave={handleDragLeave}
-                        onMouseMove={handleCanvasMouseMove}
-                        onClick={handleCanvasClick}
-                        onMouseLeave={() => setPreviewGate(null)}
+                    <ReactFlow
+                        nodes={nodes}
+                        edges={edges}
+                        nodeTypes={nodeTypes}
+                        onNodesChange={onNodesChange}
+                        onEdgesChange={onEdgesChange}
+                        onSelectionChange={handleSelectionChange}
+                        onNodeDragStart={handleNodeDragStart}
+                        onNodeDrag={handleNodeDrag}
+                        onNodeDragStop={handleNodeDragStop}
+                        fitView
+                        elementsSelectable
+                        panOnScroll={false}
+                        zoomOnScroll={false}
+                        zoomOnDoubleClick={false}
+                        zoomOnPinch={false}
+                        panOnDrag={false}
+                        autoPanOnNodeDrag={false}
+                        autoPanOnConnect={false}
                     >
-                        <ReactFlow
-                            nodes={nodes}
-                            edges={edges}
-                            nodeTypes={nodeTypes}
-                            onNodesChange={onNodesChange}
-                            onEdgesChange={onEdgesChange}
-                            onSelectionChange={handleSelectionChange}
-                            onNodeDragStart={handleNodeDragStart}
-                            onNodeDrag={handleNodeDrag}
-                            onNodeDragStop={handleNodeDragStop}
-                            fitView
-                            elementsSelectable
-                            panOnScroll={false}
-                            zoomOnScroll={false}
-                            zoomOnDoubleClick={false}
-                            zoomOnPinch={false}
-                            panOnDrag={false}
-                            autoPanOnNodeDrag={false}
-                            autoPanOnConnect={false}
-                        >
-                            <Background color="#333" gap={24} />
+                        <Background color="#333" gap={24} />
 
-                            {/* GLOBAL STATE BAND AT TOP */}
-                            <ViewportPortal>
+                        {/* GLOBAL STATE BAND AT TOP */}
+                        <ViewportPortal>
+                            <div
+                                style={{
+                                    position: 'absolute',
+                                    top: GLOBAL_BAND_OFFSET_Y,
+                                    left: GLOBAL_BAND_OFFSET_X,
+                                    pointerEvents: 'none',
+                                }}
+                            >
                                 <div
                                     style={{
-                                        position: 'absolute',
-                                        top: GLOBAL_BAND_OFFSET_Y,
-                                        left: GLOBAL_BAND_OFFSET_X,
-                                        pointerEvents: 'none',
+                                        background: 'rgba(15, 23, 42, 0.9)',
+                                        borderRadius: 6,
+                                        padding: '4px 6px',
+                                        pointerEvents: 'auto',
                                     }}
                                 >
-                                    <div
-                                        style={{
-                                            background: 'rgba(15, 23, 42, 0.9)',
-                                            borderRadius: 6,
-                                            padding: '4px 6px',
-                                            pointerEvents: 'auto',
-                                        }}
-                                    >
-                                        <GlobalStateVisualizer probs={mockProbs} />
-                                    </div>
+                                    <GlobalStateVisualizer probs={mockProbs} />
                                 </div>
-                            </ViewportPortal>
-                        </ReactFlow>
-                    </div>
-
-                    <GhostPreview previewGate={previewGate} />
-                </div>
-            </div>
-
-            {/* BOTTOM PANEL — NOW CONTAINS RUN + QUBIT BUTTONS + PALETTE */}
-            <div
-                style={{
-
-                    position: 'absolute',
-                    bottom: 0,
-                    left: 0,
-                    width: '100%',
-                    background: 'rgba(5,7,9,0.9)',
-                    display: 'flex',
-                    alignItems: 'center',
-                    gap: 16,
-                    padding: '8px 16px',
-                    borderTop: '1px solid #222',
-                }}
-            >
-
-                {/* Gate palette next to controls */}
-                <GatePalette
-                    palette={GATE_PALETTE}
-                    onDragStart={handlePaletteDragStart}
-                    onDragEnd={handlePaletteDragEnd}
-                />
-                {/* Qubit count controls */}
-                <div
-                    style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        gap: 6,
-                        background: 'rgba(0,0,0,0.5)',
-                        padding: '6px 10px',
-                        borderRadius: 6,
-                        color: '#fff',
-                    }}
-                >
-                    <button
-                        onClick={() => setNQubits((n) => Math.max(1, n - 1))}
-                        style={{
-                            padding: '2px 6px',
-                            background: '#222',
-                            border: '1px solid #444',
-                            color: '#ddd',
-                            cursor: 'pointer',
-                        }}
-                    >
-                        –
-                    </button>
-
-                    <span>{nQubits} qubits</span>
-
-                    <button
-                        onClick={() => setNQubits((n) => Math.min(3, n + 1))}
-                        style={{
-                            padding: '2px 6px',
-                            background: '#222',
-                            border: '1px solid #444',
-                            color: '#ddd',
-                            cursor: 'pointer',
-                        }}
-                    >
-                        +
-                    </button>
-
-                    <button
-                        onClick={handleRun}
-                        style={{
-                            marginLeft: 8,
-                            padding: '2px 10px',
-                            fontSize: 14,
-                            cursor: 'pointer',
-                            background: '#16a34a',
-                            border: '1px solid #22c55e',
-                            color: '#f9fafb',
-                            borderRadius: 4,
-                        }}
-                    >
-                        Run
-                    </button>
+                            </div>
+                        </ViewportPortal>
+                    </ReactFlow>
                 </div>
 
-
+                <GhostPreview previewGate={previewGate} />
             </div>
         </div>
-    );
 
-
+        {/* BOTTOM: sits below, not overlapping */}
+        <BottomPanel
+            nQubits={nQubits}
+            onDecQubits={() => setNQubits((n) => Math.max(1, n - 1))}
+            onIncQubits={() => setNQubits((n) => Math.min(3, n + 1))}
+            onRun={handleRun}
+            onPaletteDragStart={handlePaletteDragStart}
+            onPaletteDragEnd={handlePaletteDragEnd}
+        />
+    </div>
+);
 }
