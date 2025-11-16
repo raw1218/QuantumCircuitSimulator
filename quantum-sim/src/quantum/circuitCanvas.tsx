@@ -44,7 +44,7 @@ import { QubitInputsColumn } from "./qubitInputRender";
 
 function useCircuitState() {
     const { screenToFlowPosition } = useReactFlow();
-    const [nQubits, setNQubits] = useState(3);
+    const [nQubits, setNQubits] = useState(2);
     const [nodes, setNodes, onNodesChangeBase] = useNodesState<Node>(
         createRailNodes(3),
     );
@@ -498,38 +498,46 @@ export function CircuitCanvas() {
     }
   };
 
-  const handleNodeDragStop = (_: MouseEvent, node: Node) => {
-    if (node.type !== 'gate') {
-      setPreviewGate(null);
-      return;
-    }
+    const handleNodeDragStop = (_: MouseEvent, node: Node) => {
+        if (node.type !== 'gate') {
+            setPreviewGate(null);
+            return;
+        }
 
-    const flowX = node.position.x;
-    const flowY = node.position.y + GATE_Y_OFFSET;
-    const { row, col, xSnapped, ySnapped } = snapToGrid(flowX, flowY, nQubits);
+        const flowX = node.position.x;
+        const flowY = node.position.y + GATE_Y_OFFSET;
 
-    setNodes((nds) => {
-      const occupied = isCellOccupied(nds, row, col, node.id);
-      const startPos = dragStartPosRef.current[node.id];
+        const { row, col, xSnapped, ySnapped } = snapToGrid(flowX, flowY, nQubits);
 
-      if (occupied && startPos) {
-        return nds.map((n) =>
-          n.id === node.id ? { ...n, position: { ...startPos } } : n,
-        );
-      }
+        setNodes((nds) => {
+            const occupied = isCellOccupied(nds, row, col, node.id);
+            const startPos = dragStartPosRef.current[node.id];
 
-      return nds.map((n) =>
-        n.id === node.id
-          ? {
-              ...n,
-              position: { x: xSnapped, y: ySnapped - GATE_Y_OFFSET },
+            // If target cell is occupied, snap back to original position
+            if (occupied && startPos) {
+                return nds.map((n) =>
+                    n.id === node.id ? { ...n, position: { ...startPos } } : n,
+                );
             }
-          : n,
-      );
-    });
 
-    setPreviewGate(null);
-  };
+            // Otherwise snap to grid AND update row/col on data
+            return nds.map((n) =>
+                n.id === node.id
+                    ? {
+                        ...n,
+                        position: { x: xSnapped, y: ySnapped - GATE_Y_OFFSET },
+                        data: {
+                            ...n.data,
+                            col,  // 👈 keep column in sync with the new snapped position
+                            row,  // 👈 (optional but nice to have for later)
+                        },
+                    }
+                    : n,
+            );
+        });
+
+        setPreviewGate(null);
+    };
 
   /* ------- palette handlers ------- */
 
@@ -708,7 +716,7 @@ function buildCircuitFromNodes(
                         <span>{nQubits} qubits</span>
 
                         <button
-                            onClick={() => setNQubits((n) => Math.min(4, n + 1))}
+                            onClick={() => setNQubits((n) => Math.min(3 , n + 1))}
                             style={{
                                 padding: '2px 6px',
                                 fontSize: 14,
@@ -740,7 +748,7 @@ function buildCircuitFromNodes(
 
                     {/* ReactFlow canvas */}
                     <div
-                        style={{ width: '100%', height: '100%' }}
+                        style={{ width: '100%', height: '100%', marginTop: -20}}
                         onDrop={handleDrop}
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}

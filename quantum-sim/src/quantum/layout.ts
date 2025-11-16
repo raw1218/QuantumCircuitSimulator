@@ -1,14 +1,18 @@
 // src/quantum/layout.ts
 
-export const ROW_HEIGHT = 80;
-export const Y_OFFSET = 120;
+export const ROW_HEIGHT = 140; 
+export const Y_OFFSET = 0;    
 export const X_LABEL = 40;
 export const X_WIRE = 120;
 export const COL_WIDTH = 120; // distance between "time steps"
 export const MAX_COLS = 6;
 export const GATE_Y_OFFSET = 20;
 
-export const rowY = (row: number) => Y_OFFSET + row * ROW_HEIGHT;
+
+
+export function rowY(row: number): number {
+    return Y_OFFSET + row * ROW_HEIGHT;
+}
 export const colX = (col: number) => X_WIRE + col * COL_WIDTH;
 
 

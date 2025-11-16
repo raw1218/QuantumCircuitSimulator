@@ -129,7 +129,7 @@ export function QubitInputsColumn() {
                                 marginTop: 2,
                             }}
                         >
-                            <QubitVisualization index={index} size={85} />
+                            <QubitVisualization index={index} size={90} />
                         </div>
                     </div>
                 );

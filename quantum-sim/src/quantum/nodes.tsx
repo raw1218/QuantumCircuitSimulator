@@ -205,7 +205,7 @@ export function GateNode(props: NodeProps) {
                     }}
                 >
                     {/* For now, just use qubit 0; later use data.row to choose the right one */}
-                    <QubitVisualization index={0} size={70} />
+                    <QubitVisualization index={0} size={50} />
                 </div>
             )}
 
