@@ -1,17 +1,48 @@
 ﻿// qubitInputRender.tsx
 import React from 'react';
 import { useCircuitContext } from './circuitCanvas';
-import { QubitVisualization } from './QubitVisualization';
+import { QubitVisualization } from './qubitVisualization';
+import { GlobalStateColumn } from './globalStateVisualizer';
 
-export function QubitInputsColumn() {
+type QubitInputsColumnProps = {
+    probs: number[];
+    title?: string;
+};
+
+export function QubitInputsColumn({
+    probs,
+    title = 'Global state',
+}: QubitInputsColumnProps) {
     const {
         nQubits,
         qubitInputs,
         updateQubitInput,
         setQubitPreset,
+        currentCol,
     } = useCircuitContext();
 
+    if (nQubits <= 0) return null;
     if (!qubitInputs || qubitInputs.length === 0) return null;
+
+    // --- Prepare normalized global probabilities + labels ---
+    const dim = 1 << nQubits;
+
+    const clamped = probs.slice(0, dim);
+    while (clamped.length < dim) clamped.push(0);
+
+    const sum = clamped.reduce(
+        (s, p) => s + (Number.isFinite(p) ? Math.max(0, p) : 0),
+        0,
+    );
+    const norm = sum > 0 ? sum : 1;
+
+    const normalized = clamped.map((p) =>
+        Number.isFinite(p) ? Math.max(0, p) / norm : 0,
+    );
+
+    const labels = Array.from({ length: dim }, (_, i) =>
+        `|${i.toString(2).padStart(nQubits, '0')}⟩`,
+    );
 
     return (
         <div
@@ -29,6 +60,7 @@ export function QubitInputsColumn() {
                 boxSizing: 'border-box',
             }}
         >
+            {/* Section header */}
             <div
                 style={{
                     fontWeight: 600,
@@ -39,6 +71,7 @@ export function QubitInputsColumn() {
                 Qubit Inputs
             </div>
 
+            {/* Per-qubit cards */}
             {Array.from({ length: nQubits }).map((_, index) => {
                 const input = qubitInputs[index];
                 if (!input) return null;
@@ -59,9 +92,15 @@ export function QubitInputsColumn() {
                             gap: 4,
                         }}
                     >
-                        {/* Top controls */}
-                        <div style={{ display: 'flex', flexDirection: 'column', gap: 3 }}>
-                            {/* Header row */}
+                        {/* Controls */}
+                        <div
+                            style={{
+                                display: 'flex',
+                                flexDirection: 'column',
+                                gap: 3,
+                            }}
+                        >
+                            {/* Header */}
                             <div
                                 style={{
                                     display: 'flex',
@@ -69,7 +108,14 @@ export function QubitInputsColumn() {
                                     alignItems: 'center',
                                 }}
                             >
-                                <span style={{ fontWeight: 500, fontSize: 11 }}>q{index}</span>
+                                <span
+                                    style={{
+                                        fontWeight: 500,
+                                        fontSize: 11,
+                                    }}
+                                >
+                                    q{index}
+                                </span>
 
                                 <div style={{ display: 'flex', gap: 3 }}>
                                     <PresetButton
@@ -121,7 +167,7 @@ export function QubitInputsColumn() {
                             />
                         </div>
 
-                        {/* Smaller Bloch sphere */}
+                        {/* Bloch sphere */}
                         <div
                             style={{
                                 display: 'flex',
@@ -134,6 +180,16 @@ export function QubitInputsColumn() {
                     </div>
                 );
             })}
+
+            {/* --- GlobalStateColumn --- */}
+
+                <GlobalStateColumn
+                    col={currentCol ?? 0}
+                    title={title}
+                    labels={labels}
+                normalized={normalized}
+                />
+       
         </div>
     );
 }

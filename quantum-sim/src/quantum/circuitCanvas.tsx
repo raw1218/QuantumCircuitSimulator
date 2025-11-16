@@ -62,6 +62,9 @@ function useCircuitState() {
     const [runProgress, setRunProgress] = useState<number | null>(null);
     const [runMaxCols, setRunMaxCols] = useState<number>(0);
 
+    const [currentCol, setCurrentCol] = useState<number | null>(null);
+    const [isRunning, setIsRunning] = useState(false);
+
 
 
     const { qubitInputs, updateQubitInput, setQubitPreset } = useQubitInputs(nQubits);
@@ -85,6 +88,11 @@ function useCircuitState() {
         setRunProgress,
         runMaxCols,
         setRunMaxCols,
+        currentCol,
+        setCurrentCol,
+        isRunning,
+        setIsRunning,
+
     };
 }
 
@@ -350,13 +358,11 @@ function RunHighlightOverlay({ currentCol, maxCols, nQubits }: RunHighlightProps
 
 
 export function CircuitCanvas() {
-    const { screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId, qubitInputs, runProgress, setRunProgress } = useCircuitContext();
+    const { screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId, qubitInputs, runProgress, setRunProgress, currentCol, setCurrentCol, isRunning, setIsRunning, runMaxCols, setRunMaxCols } = useCircuitContext();
     const [previewGate, setPreviewGate] = useState<PreviewGate | null>(null);
     const [dragKind, setDragKind] = useState<GateKind | null>(null);
-    const [currentCol, setCurrentCol] = useState<number | null>(null);
 
-    const [isRunning, setIsRunning] = useState(false);
-    const [runMaxCols, setRunMaxCols] = useState(0);
+
 
 
     const dragStartPosRef = useRef<Record<string, { x: number; y: number }>>({});
@@ -650,7 +656,16 @@ export function CircuitCanvas() {
 
         const tick = (now: number) => {
             const t = Math.min(1, (now - start) / durationMs);
+
+            // keep runProgress in sync
             setRunProgress(t);
+
+            // compute current column from progress and push to context
+            const scanCol = Math.min(
+                MAX_COLS - 1,
+                Math.floor(t* MAX_COLS)
+            );
+            setCurrentCol(scanCol);
 
             if (t < 1) {
                 requestAnimationFrame(tick);
@@ -661,8 +676,7 @@ export function CircuitCanvas() {
 
         const id = requestAnimationFrame(tick);
         return () => cancelAnimationFrame(id);
-    }, [isRunning, runMaxCols, setRunProgress]);
-
+    }, [isRunning, runMaxCols, setRunProgress, setCurrentCol, setIsRunning]);
     /* ------- render ------- */
 
     // Tweakable offsets for the controls + global-state band (in graph coords)
@@ -693,7 +707,7 @@ export function CircuitCanvas() {
                 }}
             >
                 {/* LEFT: Inputs */}
-                <QubitInputsColumn />
+                <QubitInputsColumn probs={mockProbs} />
 
                 {/* RIGHT: ReactFlow + global-state band */}
                 <div

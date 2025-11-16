@@ -171,7 +171,7 @@ export function GateNode(props: NodeProps) {
     const kind = data.kind ?? '';
     const isPreview = !!data.isPreview;
 
-    const { runProgress } = useCircuitContext();
+    const { runProgress, setCurrentCol, currentCol } = useCircuitContext();
 
     // text inside gate
     const innerLabel = data.label ?? kind ?? '';
@@ -190,9 +190,9 @@ export function GateNode(props: NodeProps) {
             Math.floor(runProgress * MAX_COLS)
         );
 
+
         isActive = scanCol >= gateCol;
         // If you want visibility:
-         console.log('Gate timing', { id: props.id, kind, gateCol, runProgress, scanCol, isActive });
     }
 
     return (
@@ -202,21 +202,6 @@ export function GateNode(props: NodeProps) {
                 display: 'inline-block',
             }}
         >
-            {/* Overlay when highlight is on this column */}
-            {isActive && kind !== 'MEASURE' && (
-                <div
-                    style={{
-                        position: 'absolute',
-                        bottom: '100%',
-                        left: '50%',
-                        transform: 'translate(-50%, -8px)',
-                        pointerEvents: 'none',
-                    }}
-                >
-                    {/* For now, just use qubit 0; later use data.row to choose the right one */}
-                    <QubitVisualization index={0} size={50} />
-                </div>
-            )}
 
             {isActive && kind === 'MEASURE' && (
                 <div
