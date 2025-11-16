@@ -4,6 +4,7 @@ import type { NodeProps } from '@xyflow/react';
 import type { GateKind } from './model';
 import { useCircuitContext } from './circuitCanvas';
 import { COL_WIDTH, MAX_COLS } from './layout';
+import { QubitVisualization } from './qubitVisualization';
 
 // ===== Qubit label node (green box) =====
 export function QubitLabelNode(props: NodeProps) {
@@ -147,13 +148,13 @@ export function GateGlyph({ kind, label, selected, isPreview }: GateGlyphProps) 
 
 
 // ===== Gate node (used by ReactFlow) =====
-
-
 type GateData = {
     label?: string;
     kind?: string;
     isPreview?: boolean;
-    measureOutcome?: 0 | 1; // for later, when you hook up real logic
+    col?: number;            // 0-based column index
+    row?: number;            // optional, for later
+    measureOutcome?: 0 | 1;  // for later
 };
 
 export function GateNode(props: NodeProps) {
@@ -161,12 +162,29 @@ export function GateNode(props: NodeProps) {
     const kind = data.kind ?? '';
     const isPreview = !!data.isPreview;
 
-    // what goes INSIDE the square
-    let innerLabel = data.label ?? kind ?? '';
+    const { runProgress } = useCircuitContext();
 
+    // text inside gate
+    const innerLabel = data.label ?? kind ?? '';
 
-    // for later: you can set this from your sim
-    const outcome = data.measureOutcome;
+    const gateCol =
+        typeof data.col === 'number' && Number.isFinite(data.col)
+            ? data.col
+            : null;
+
+    let isActive = false;
+
+    if (!isPreview && runProgress != null && gateCol !== null && MAX_COLS > 0) {
+        // current highlighted column 0..MAX_COLS-1
+        const scanCol = Math.min(
+            MAX_COLS - 1,
+            Math.floor(runProgress * MAX_COLS)
+        );
+
+        isActive = scanCol >= gateCol;
+        // If you want visibility:
+         console.log('Gate timing', { id: props.id, kind, gateCol, runProgress, scanCol, isActive });
+    }
 
     return (
         <div
@@ -175,33 +193,40 @@ export function GateNode(props: NodeProps) {
                 display: 'inline-block',
             }}
         >
-            {kind === 'MEASURE' && (
+            {/* Overlay when highlight is on this column */}
+            {isActive && kind !== 'MEASURE' && (
                 <div
                     style={{
                         position: 'absolute',
-                        top: -14,                 // float above the gate
+                        bottom: '100%',
                         left: '50%',
-                        transform: 'translateX(-50%)',
-                        minWidth: 16,
-                        padding: '1px 5px',
+                        transform: 'translate(-50%, -8px)',
+                        pointerEvents: 'none',
+                    }}
+                >
+                    {/* For now, just use qubit 0; later use data.row to choose the right one */}
+                    <QubitVisualization index={0} size={70} />
+                </div>
+            )}
+
+            {isActive && kind === 'MEASURE' && (
+                <div
+                    style={{
+                        position: 'absolute',
+                        bottom: '100%',
+                        left: '50%',
+                        transform: 'translate(-50%, -6px)',
+                        padding: '2px 6px',
                         borderRadius: 999,
                         border: '1px solid rgba(248, 250, 252, 0.4)',
-                        background:
-                            outcome === 0 || outcome === 1
-                                ? 'rgba(15,23,42,0.95)'
-                                : 'rgba(15,23,42,0.5)',
-                        color:
-                            outcome === 1
-                                ? '#f97373'
-                                : outcome === 0
-                                    ? '#4ade80'
-                                    : 'rgba(226,232,240,0.8)',
-                        fontSize: 9,
+                        background: 'rgba(15,23,42,0.95)',
+                        color: '#4ade80',
+                        fontSize: 10,
                         textAlign: 'center',
                         pointerEvents: 'none',
                     }}
                 >
-                    {outcome === 0 || outcome === 1 ? outcome : '?'}
+                    0 {/* hard-coded for now */}
                 </div>
             )}
 
@@ -214,8 +239,6 @@ export function GateNode(props: NodeProps) {
         </div>
     );
 }
-
-
 // ===== Node type map for ReactFlow =====
 
 export const nodeTypes = {

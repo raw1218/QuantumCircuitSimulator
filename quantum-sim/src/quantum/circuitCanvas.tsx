@@ -57,6 +57,8 @@ function useCircuitState() {
     }
     // inside useCircuitState()
     const [runProgress, setRunProgress] = useState<number | null>(null);
+    const [runMaxCols, setRunMaxCols] = useState<number>(0);
+
 
 
     const { qubitInputs, updateQubitInput, setQubitPreset } = useQubitInputs(nQubits);
@@ -78,6 +80,8 @@ function useCircuitState() {
         setQubitPreset,
         runProgress,
         setRunProgress,
+        runMaxCols,
+        setRunMaxCols,
     };
 }
 
@@ -350,7 +354,6 @@ export function CircuitCanvas() {
   const handleSelectionChange = (params: SelectionChange) => {
     const gateNode = params.nodes.find((n) => n.type === 'gate');
       setSelectedNodeId(gateNode ? gateNode.id : null);
-      console.log('Selection changed, selectedNodeId =', selectedNodeId);
   };
 
   useDeleteSelectedGate();
@@ -372,52 +375,56 @@ export function CircuitCanvas() {
 
   /* ------- palette drag (external) ------- */
 
-  const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
+    const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
 
-    const kind: GateKind | null =
-      dragKind ||
-      ((event.dataTransfer.getData('text/plain') as GateKind) ||
-        (event.dataTransfer.getData('application/gate-kind') as GateKind));
+        const kind: GateKind | null =
+            dragKind ||
+            ((event.dataTransfer.getData('text/plain') as GateKind) ||
+                (event.dataTransfer.getData('application/gate-kind') as GateKind));
 
-    if (!kind) {
-      setPreviewGate(null);
-      setDragKind(null);
-      return;
-    }
+        if (!kind) {
+            setPreviewGate(null);
+            setDragKind(null);
+            return;
+        }
 
-    const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+        const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
-    const { row, col, xSnapped, ySnapped } = snapToGrid(
-      pos.x,
-      pos.y + GATE_Y_OFFSET,
-      nQubits,
-    );
+        const { row, col, xSnapped, ySnapped } = snapToGrid(
+            pos.x,
+            pos.y + GATE_Y_OFFSET,
+            nQubits,
+        );
 
-    const newId = `gate-${kind}-${Date.now()}`;
+        const newId = `gate-${kind}-${Date.now()}`;
 
-    setNodes((nds) => {
-      if (isCellOccupied(nds, row, col)) {
-        return nds;
-      }
+        setNodes((nds) => {
+            if (isCellOccupied(nds, row, col)) {
+                return nds;
+            }
 
-      const newNode: Node = {
-        id: newId,
-        type: 'gate',
-        position: { x: xSnapped, y: ySnapped - GATE_Y_OFFSET },
-        data: { kind, label: kind },
-        draggable: true,
-        selected: true,
-      };
+            const newNode: Node = {
+                id: newId,
+                type: 'gate',
+                position: { x: xSnapped, y: ySnapped - GATE_Y_OFFSET },
+                data: {
+                    kind,
+                    label: kind,
+                    col,   // 👈<<< save column index
+                    row,   // (optional, handy later for picking which qubit’s Bloch sphere)
+                },
+                draggable: true,
+                selected: true,
+            };
 
-      const cleared = nds.map((n) => ({ ...n, selected: false }));
-      return cleared.concat(newNode);
-    });
+            const cleared = nds.map((n) => ({ ...n, selected: false }));
+            return cleared.concat(newNode);
+        });
 
-    setSelectedNodeId(newId);
-    setPreviewGate(null);
-    setDragKind(null);
-  };
+        setPreviewGate(null);
+        setDragKind(null);
+    };
 
   const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
     event.preventDefault();
