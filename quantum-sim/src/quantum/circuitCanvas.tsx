@@ -919,107 +919,120 @@ export function CircuitCanvas() {
         const idx = currentCol % dim;
         return i === idx ? 1 : 0;
     });
-  return (
+const GLOBAL_BAND_HEIGHT = 140; // tweak to match your GlobalStateVisualizer height
+
+return (
+  <div
+    style={{
+      width: '100vw',
+      height: '100vh',
+      background: '#050709',
+      display: 'flex',
+      flexDirection: 'column',
+    }}
+  >
+    {/* MAIN AREA: fills remaining height above bottom panel */}
     <div
-        style={{
-            width: '100vw',
-            height: '100vh',
-            background: '#050709',
-            display: 'flex',
-            flexDirection: 'column',
-        }}
+      style={{
+        flex: 1,
+        display: 'grid',
+        gridTemplateColumns: '260px 1fr',
+        width: '100%',
+        minHeight: 0,
+      }}
     >
-        {/* MAIN AREA: fills remaining height above bottom panel */}
+      {/* LEFT: Inputs (scrollable) */}
+      <LeftPanel probs={mockProbs} />
+
+      {/* RIGHT: reserved band + ReactFlow */}
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          width: '100%',
+          height: '100%',
+          minHeight: 0,
+        }}
+      >
+
+        {/* ReactFlow fills the rest */}
         <div
-            style={{
-                flex: 1,
-                display: 'grid',
-                gridTemplateColumns: '260px 1fr',
-                width: '100%',
-                minHeight: 0, // allow children to shrink and scroll
-            }}
+          style={{
+            flex: 1,
+            minHeight: 0,
+            position: 'relative',
+            width: '100%',
+            height: '100%',
+            overflow: 'hidden',
+          }}
+          onDrop={handleDrop}
+          onDragOver={handleDragOver}
+          onDragLeave={handleDragLeave}
+          onMouseMove={handleCanvasMouseMove}
+          onClick={handleCanvasClick}
+          onMouseLeave={() => setPreviewGate(null)}
         >
-            {/* LEFT: Inputs (scrollable) */}
-            <LeftPanel probs={mockProbs} />
+          <ReactFlow
+            nodes={nodes}
+            edges={edges}
+            nodeTypes={nodeTypes}
+            onNodesChange={onNodesChange}
+            onEdgesChange={onEdgesChange}
+            onSelectionChange={handleSelectionChange}
+            onNodeDragStart={handleNodeDragStart}
+            onNodeDrag={handleNodeDrag}
+            onNodeDragStop={handleNodeDragStop}
+            fitView
+            elementsSelectable
+            panOnScroll={false}
+            zoomOnScroll={false}
+            zoomOnDoubleClick={false}
+            zoomOnPinch={false}
+            panOnDrag={false}
+            autoPanOnNodeDrag={false}
+            autoPanOnConnect={false}
+          >
+            <Background color="#333" gap={24} />
 
-            {/* RIGHT: ReactFlow + global-state band */}
-            <div
+            {/* GLOBAL STATE BAND: overlay, lined up with columns, above everything */}
+            <ViewportPortal>
+              <div
                 style={{
-                    position: 'relative',
-                    width: '100%',
-                    height: '100%',
-                    minHeight: 0,
+                  position: 'absolute',
+                  // keep using your graph-space offsets so it lines with colX/rowY
+                  top: GLOBAL_BAND_OFFSET_Y,
+                  left: GLOBAL_BAND_OFFSET_X,
+                  pointerEvents: 'none',
+                  margin: '10px',
                 }}
-            >
+              >
                 <div
-                    style={{ width: '100%', height: '100%' }}
-                    onDrop={handleDrop}
-                    onDragOver={handleDragOver}
-                    onDragLeave={handleDragLeave}
-                    onMouseMove={handleCanvasMouseMove}
-                    onClick={handleCanvasClick}
-                    onMouseLeave={() => setPreviewGate(null)}
+                  style={{
+                    borderRadius: 6,
+                    padding: '4px 6px',
+                    pointerEvents: 'auto',
+                  }}
                 >
-                    <ReactFlow
-                        nodes={nodes}
-                        edges={edges}
-                        nodeTypes={nodeTypes}
-                        onNodesChange={onNodesChange}
-                        onEdgesChange={onEdgesChange}
-                        onSelectionChange={handleSelectionChange}
-                        onNodeDragStart={handleNodeDragStart}
-                        onNodeDrag={handleNodeDrag}
-                        onNodeDragStop={handleNodeDragStop}
-                        fitView
-                        elementsSelectable
-                        panOnScroll={false}
-                        zoomOnScroll={false}
-                        zoomOnDoubleClick={false}
-                        zoomOnPinch={false}
-                        panOnDrag={false}
-                        autoPanOnNodeDrag={false}
-                        autoPanOnConnect={false}
-                    >
-                        <Background color="#333" gap={24} />
-
-                        {/* GLOBAL STATE BAND AT TOP */}
-                        <ViewportPortal>
-                            <div
-                                style={{
-                                    position: 'absolute',
-                                    top: GLOBAL_BAND_OFFSET_Y,
-                                    left: GLOBAL_BAND_OFFSET_X,
-                                    pointerEvents: 'none',
-                                }}
-                            >
-                                <div
-                                    style={{
-                                        background: 'rgba(15, 23, 42, 0.9)',
-                                        borderRadius: 6,
-                                        padding: '4px 6px',
-                                        pointerEvents: 'auto',
-                                    }}
-                                >
-                                    <GlobalStateVisualizer probs={mockProbs} />
-                                </div>
-                            </div>
-                        </ViewportPortal>
-                    </ReactFlow>
+                  <GlobalStateVisualizer probs={mockProbs} />
                 </div>
+              </div>
+            </ViewportPortal>
 
-                <GhostPreview previewGate={previewGate} />
-            </div>
+            <GhostPreview previewGate={previewGate} />
+          </ReactFlow>
         </div>
-
-        {/* BOTTOM: sits below, not overlapping */}
-        <BottomPanel
-            nQubits={nQubits}
-            onDecQubits={() => setNQubits((n) => Math.max(1, n - 1))}
-            onIncQubits={() => setNQubits((n) => Math.min(3, n + 1))}
-            onRun={handleRun}
-            onPaletteDragStart={handlePaletteDragStart}
-            onPaletteDragEnd={handlePaletteDragEnd}
-        />
+      </div>
     </div>
+
+    {/* BOTTOM: sits below, not overlapping */}
+    <BottomPanel
+      nQubits={nQubits}
+      onDecQubits={() => setNQubits((n) => Math.max(1, n - 1))}
+      onIncQubits={() => setNQubits((n) => Math.min(3, n + 1))}
+      onRun={handleRun}
+      onPaletteDragStart={handlePaletteDragStart}
+      onPaletteDragEnd={handlePaletteDragEnd}
+    />
+  </div>
 );
 }
