@@ -134,7 +134,6 @@ export const GlobalStateVisualizer: React.FC<GlobalStateVisualizerProps> = ({
     title = 'Global state',
 }) => {
     const { nQubits, currentCol, runMaxCols } = useCircuitContext();
-    console.log('GlobalStateVisualizer render. currentCol = ', currentCol);
 
     // No qubits, no table
     if (nQubits <= 0) return null;

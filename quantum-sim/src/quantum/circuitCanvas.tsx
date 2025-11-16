@@ -65,6 +65,9 @@ function useCircuitState() {
     const [currentCol, setCurrentCol] = useState<number | null>(null);
     const [isRunning, setIsRunning] = useState(false);
 
+    const [selectedNodeKind, setSelectedNodeKind] = useState<GateKind | null>(null);
+    const [isPlacingCNOTParter, setIsPlacingCNOTParter] = useState(false);
+
 
 
     const { qubitInputs, updateQubitInput, setQubitPreset } = useQubitInputs(nQubits);
@@ -92,7 +95,10 @@ function useCircuitState() {
         setCurrentCol,
         isRunning,
         setIsRunning,
-
+        selectedNodeKind,
+        setSelectedNodeKind,
+        isPlacingCNOTParter,
+        setIsPlacingCNOTParter,
     };
 }
 
@@ -260,51 +266,72 @@ function GhostPreview({ previewGate }: GhostPreviewProps) {
   );
 }
 
-
 type GatePaletteProps = {
-  palette: GateKind[];
-  onDragStart: (kind: GateKind, event: DragEvent<HTMLDivElement>) => void;
-  onDragEnd: () => void;
+    palette: GateKind[];
+    onDragStart: (kind: GateKind, event: DragEvent<HTMLDivElement>) => void;
+    onDragEnd: () => void;
 };
 
 function GatePalette({ palette, onDragStart, onDragEnd }: GatePaletteProps) {
-  return (
-    <div
-      style={{
-        left: 0,
-        right: 0,
-        bottom: 0,
-        padding: '8px 16px',
-        background: 'rgba(5, 7, 9, 0.9)',
-        display: 'flex',
-        gap: 8,
-        alignItems: 'center',
-      }}
-    >
-      <span
-        style={{
-          color: '#aaa',
-          fontSize: 14,
-          fontFamily: 'system-ui, sans-serif',
-          marginRight: 8,
-        }}
-      >
-        Drag a gate onto a wire (click to select, Delete to remove):
-      </span>
+    const { selectedNodeKind, setSelectedNodeKind } = useCircuitContext();
 
-      {palette.map((kind) => (
+    return (
         <div
-          key={kind}
-          draggable
-          onDragStart={(event) => onDragStart(kind, event)}
-          onDragEnd={onDragEnd}
-          style={{ cursor: 'grab', userSelect: 'none' }}
+            style={{
+                left: 0,
+                right: 0,
+                bottom: 0,
+                padding: '8px 16px',
+                background: 'rgba(5, 7, 9, 0.9)',
+                display: 'flex',
+                gap: 8,
+                alignItems: 'center',
+            }}
         >
-          <GateGlyph kind={kind} />
+            <span
+                style={{
+                    color: '#aaa',
+                    fontSize: 14,
+                    fontFamily: 'system-ui, sans-serif',
+                    marginRight: 8,
+                }}
+            >
+                Drag a gate onto a wire (click to select, Delete to remove):
+            </span>
+
+            {palette.map((kind) => {
+                const isSelected = selectedNodeKind === kind;
+
+                return (
+                    <div
+                        key={kind}
+                        draggable
+                        onClick={() =>
+                            setSelectedNodeKind((prev) => (prev === kind ? null : kind))
+                        }
+                        onDragStart={(event) => onDragStart(kind, event)}
+                        onDragEnd={onDragEnd}
+                        style={{
+                            cursor: 'grab',
+                            userSelect: 'none',
+                            padding: 4,
+                            borderRadius: 6,
+                            border: isSelected ? '1px solid #38bdf8' : '1px solid transparent',
+                            background: isSelected
+                                ? 'rgba(56, 189, 248, 0.1)'
+                                : 'transparent',
+                            transform: isSelected ? 'scale(1.15)' : 'scale(1.0)',
+                            transformOrigin: 'center center',
+                            transition:
+                                'transform 0.12s ease-out, border-color 0.12s ease-out, background-color 0.12s ease-out',
+                        }}
+                    >
+                        <GateGlyph kind={kind} />
+                    </div>
+                );
+            })}
         </div>
-      ))}
-    </div>
-  );
+    );
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -358,11 +385,8 @@ function RunHighlightOverlay({ currentCol, maxCols, nQubits }: RunHighlightProps
 
 
 export function CircuitCanvas() {
-    const { screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId, qubitInputs, runProgress, setRunProgress, currentCol, setCurrentCol, isRunning, setIsRunning, runMaxCols, setRunMaxCols } = useCircuitContext();
+    const { screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId, qubitInputs, runProgress, setRunProgress, currentCol, setCurrentCol, isRunning, setIsRunning, runMaxCols, setRunMaxCols, selectedNodeKind, setSelectedNodeKind, isPlacingCNOTParter, setIsPlacingCNOTParter} = useCircuitContext();
     const [previewGate, setPreviewGate] = useState<PreviewGate | null>(null);
-    const [dragKind, setDragKind] = useState<GateKind | null>(null);
-
-
 
 
     const dragStartPosRef = useRef<Record<string, { x: number; y: number }>>({});
@@ -392,37 +416,29 @@ export function CircuitCanvas() {
         });
     }, [nQubits, setNodes]);
 
-    /* ------- palette drag (external) ------- */
 
-    const handleDrop = (event: DragEvent<HTMLDivElement>) => {
-        event.preventDefault();
-
-        const kind: GateKind | null =
-            dragKind ||
-            ((event.dataTransfer.getData('text/plain') as GateKind) ||
-                (event.dataTransfer.getData('application/gate-kind') as GateKind));
-
-        if (!kind) {
-            setPreviewGate(null);
-            setDragKind(null);
-            return;
-        }
-
-        const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
-
-        const { row, col, xSnapped, ySnapped } = snapToGrid(
-            pos.x,
-            pos.y + GATE_Y_OFFSET,
-            nQubits,
-        );
-
+    /* Logic For Placing Nodes */
+    const placeNodeAt = (kind: GateKind | null, row: number, col: number) => {
+        if (!kind) return;
+        const xSnapped = colX(col);
+        const ySnapped = rowY(row);
         const newId = `gate-${kind}-${Date.now()}`;
+
+        if (kind == 'CNOT') {
+            if (!isPlacingCNOTParter) {
+                setIsPlacingCNOTParter(true);
+            }
+            else {
+                setIsPlacingCNOTParter(false);
+            }
+        }
+        
+
 
         setNodes((nds) => {
             if (isCellOccupied(nds, row, col)) {
                 return nds;
             }
-
             const newNode: Node = {
                 id: newId,
                 type: 'gate',
@@ -436,20 +452,84 @@ export function CircuitCanvas() {
                 draggable: true,
                 selected: true,
             };
-
             const cleared = nds.map((n) => ({ ...n, selected: false }));
             return cleared.concat(newNode);
         });
 
+        setSelectedNodeKind(null);
         setPreviewGate(null);
-        setDragKind(null);
+    }
+
+
+    // ------- click-to-place using selectedNodeKind ------- //
+
+    const handleCanvasMouseMove = (event: MouseEvent<HTMLDivElement>) => {
+        // Only show a preview if we have a selected gate kind
+        if (!selectedNodeKind) {
+            setPreviewGate(null);
+            return;
+        }
+
+        const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+
+        const { row, col } = snapToGrid(
+            pos.x,
+            pos.y + GATE_Y_OFFSET,
+            nQubits,
+        );
+
+        if (isCellOccupied(nodes, row, col)) {
+            setPreviewGate(null);
+        } else {
+            setPreviewGate({ row, col, kind: selectedNodeKind });
+        }
+    };
+
+    const handleCanvasClick = (event: MouseEvent<HTMLDivElement>) => {
+        if (!selectedNodeKind) return;
+
+        const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+
+        const { row, col } = snapToGrid(
+            pos.x,
+            pos.y + GATE_Y_OFFSET,
+            nQubits,
+        );
+
+        if (isCellOccupied(nodes, row, col)) {
+            return;
+        }
+
+        // Use your existing helper
+        placeNodeAt(selectedNodeKind, row, col);
+    };
+
+
+    /* ------- palette drag (external) ------- */
+
+    const handleDrop = (event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+
+        const kind: GateKind | null =
+            selectedNodeKind ||
+            ((event.dataTransfer.getData('text/plain') as GateKind) ||
+                (event.dataTransfer.getData('application/gate-kind') as GateKind));
+
+        const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY })
+        const { row, col, xSnapped, ySnapped } = snapToGrid(
+            pos.x,
+            pos.y + GATE_Y_OFFSET,
+            nQubits,
+        );
+
+        placeNodeAt(kind, row, col);
     };
 
     const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'move';
 
-        if (!dragKind) return;
+        if (!selectedNodeKind) return;
 
         const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
@@ -458,13 +538,16 @@ export function CircuitCanvas() {
         if (isCellOccupied(nodes, row, col)) {
             setPreviewGate(null);
         } else {
-            setPreviewGate({ row, col, kind: dragKind });
+            setPreviewGate({ row, col, kind: selectedNodeKind });
         }
     };
 
     const handleDragLeave = () => {
         setPreviewGate(null);
     };
+
+
+
 
     /* ------- node drag (internal) ------- */
 
@@ -479,6 +562,7 @@ export function CircuitCanvas() {
             setPreviewGate(null);
             return;
         }
+        setSelectedNodeKind(kind);
 
         const flowX = node.position.x;
         const flowY = node.position.y + GATE_Y_OFFSET;
@@ -527,48 +611,32 @@ export function CircuitCanvas() {
         const flowY = node.position.y + GATE_Y_OFFSET;
 
         const { row, col, xSnapped, ySnapped } = snapToGrid(flowX, flowY, nQubits);
+        const occupied = isCellOccupied(nodes, row, col, node.id);
+        console.log('in handleNodeDragStop:', { row, col, occupied }); 
+        if (occupied) {
+            const startPos = dragStartPosRef.current[node.id]
+            const { row, col, xSnapped, ySnapped } = snapToGrid(startPos.x, startPos.y, nQubits);
+            setNodes((nds) => nds.filter((n) => n.id !== node.id)); // delete the dragged node 
+            placeNodeAt(selectedNodeKind, row, col);
+        }
+        else {
+            setNodes((nds) => nds.filter((n) => n.id !== node.id)); // delete the dragged node 
+            placeNodeAt(selectedNodeKind, row, col);
+        }
 
-        setNodes((nds) => {
-            const occupied = isCellOccupied(nds, row, col, node.id);
-            const startPos = dragStartPosRef.current[node.id];
-
-            // If target cell is occupied, snap back to original position
-            if (occupied && startPos) {
-                return nds.map((n) =>
-                    n.id === node.id ? { ...n, position: { ...startPos } } : n,
-                );
-            }
-
-            // Otherwise snap to grid AND update row/col on data
-            return nds.map((n) =>
-                n.id === node.id
-                    ? {
-                        ...n,
-                        position: { x: xSnapped, y: ySnapped - GATE_Y_OFFSET },
-                        data: {
-                            ...n.data,
-                            col,  // 👈 keep column in sync with the new snapped position
-                            row,  // 👈 (optional but nice to have for later)
-                        },
-                    }
-                    : n,
-            );
-        });
-
-        setPreviewGate(null);
     };
 
     /* ------- palette handlers ------- */
 
     const handlePaletteDragStart = (kind: GateKind, event: DragEvent<HTMLDivElement>) => {
-        setDragKind(kind);
+        setSelectedNodeKind(kind);
         event.dataTransfer.setData('text/plain', kind);
         event.dataTransfer.setData('application/gate-kind', kind);
         event.dataTransfer.effectAllowed = 'move';
     };
 
     const handlePaletteDragEnd = () => {
-        setDragKind(null);
+        setSelectedNodeKind(null);
         setPreviewGate(null);
     };
 
@@ -722,6 +790,9 @@ export function CircuitCanvas() {
                         onDrop={handleDrop}
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}
+                        onMouseMove={handleCanvasMouseMove}
+                        onClick={handleCanvasClick}
+                        onMouseLeave={() => setPreviewGate(null)}
                     >
                         <ReactFlow
                             nodes={nodes}
