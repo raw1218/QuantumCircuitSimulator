@@ -218,25 +218,97 @@ export function createRailNodes(nQubits: number): Node[] {
 /* ──────────────────────────────────────────────────────────────
    Hooks
    ────────────────────────────────────────────────────────────── */
-
 function useDeleteSelectedGate() {
-    const { setNodes, setEdges, selectedNodeId, setSelectedNodeId } =
-        useCircuitContext();
+    const {
+        nodes,
+        setNodes,
+        setEdges,
+        selectedNodeId,
+        setSelectedNodeId,
+    } = useCircuitContext();
 
     useEffect(() => {
         const handler = (event: KeyboardEvent) => {
-            console.log('keydown:', event.key, 'selectedNodeId =', selectedNodeId);
-
             if (!selectedNodeId) return;
             if (event.key !== 'Delete' && event.key !== 'Backspace') return;
 
             event.preventDefault();
 
-            setNodes((nds) => nds.filter((n) => n.id !== selectedNodeId));
+            // Always delete the selected node
+            const idsToDelete = new Set<string>([selectedNodeId]);
+
+            // Try to find the selected gate node
+            const selectedNode = nodes.find(
+                (n) => n.id === selectedNodeId && n.type === 'gate',
+            );
+
+            if (selectedNode) {
+                const data = selectedNode.data as {
+                    kind?: GateKind;
+                    row?: number;
+                    col?: number;
+                    hasPartner?: boolean;
+                    partnerRow?: number;
+                    partnerCol?: number;
+                };
+
+                if (data?.kind === 'CNOT') {
+                    // Case 1: this node *stores* its partner info (the "second" CNOT)
+                    if (
+                        data.hasPartner &&
+                        typeof data.partnerRow === 'number' &&
+                        typeof data.partnerCol === 'number'
+                    ) {
+                        const partner = nodes.find((n) => {
+                            if (n.type !== 'gate') return false;
+                            const d = n.data as any;
+                            return (
+                                d?.kind === 'CNOT' &&
+                                d?.row === data.partnerRow &&
+                                d?.col === data.partnerCol
+                            );
+                        });
+
+                        if (partner) {
+                            idsToDelete.add(partner.id);
+                        }
+                    }
+                    // Case 2: this is the "first" CNOT (no partnerRow/partnerCol),
+                    // so we scan for a gate that points *to* this one's row/col.
+                    else if (
+                        typeof data.row === 'number' &&
+                        typeof data.col === 'number'
+                    ) {
+                        const partner = nodes.find((n) => {
+                            if (n.type !== 'gate') return false;
+                            const d = n.data as any;
+                            return (
+                                d?.kind === 'CNOT' &&
+                                d?.hasPartner &&
+                                typeof d.partnerRow === 'number' &&
+                                typeof d.partnerCol === 'number' &&
+                                d.partnerRow === data.row &&
+                                d.partnerCol === data.col
+                            );
+                        });
+
+                        if (partner) {
+                            idsToDelete.add(partner.id);
+                        }
+                    }
+                }
+            }
+
+            // Remove selected node + partner (if found)
+            setNodes((nds) => nds.filter((n) => !idsToDelete.has(n.id)));
+
+            // Remove any edges connected to either node
             setEdges((eds) =>
                 eds.filter(
-                    (e) => e.source !== selectedNodeId && e.target !== selectedNodeId
-                )
+                    (e) =>
+                        !idsToDelete.has(e.source) &&
+                        !idsToDelete.has(e.target),
+                ),
             );
 
             setSelectedNodeId(null);
@@ -244,8 +316,9 @@ function useDeleteSelectedGate() {
 
         window.addEventListener('keydown', handler);
         return () => window.removeEventListener('keydown', handler);
-    }, [selectedNodeId, setNodes, setEdges, setSelectedNodeId]);
+    }, [selectedNodeId, nodes, setNodes, setEdges, setSelectedNodeId]);
 }
+
 
 /* ──────────────────────────────────────────────────────────────
    Presentational components
