@@ -32,10 +32,13 @@ import {
   rowY,
   colX,
   snapToGrid,
-  MAX_COLS,
+    MAX_COLS,
+    WIRE_GLOBAL_OFFSET_Y,
+    WIRE_GLOBAL_OFFSET_X,
 } from './layout';
 import type { GateKind } from './model';
 import { QubitInputsColumn } from "./qubitInputRender"; 
+import { GlobalStateVisualizer } from './globalStateVisualizer';
 
 
 
@@ -149,32 +152,44 @@ type PreviewGate = {
    Rail (label + wire) generator
    ────────────────────────────────────────────────────────────── */
 
-function createRailNodes(nQubits: number): Node[] {
-  const rails: Node[] = [];
+export function createRailNodes(nQubits: number): Node[] {
+    const nodes: Node[] = [];
 
-  for (let i = 0; i < nQubits; i++) {
-    const y = rowY(i);
-
-    rails.push({
-      id: `label-${i}`,
-      type: 'qubitLabel',
-      position: { x: 0, y },
-      data: { label: `q${i}` },
-      draggable: false,
-      selectable: false,
+    // 1) Invisible padding row above real wires
+    nodes.push({
+        id: 'padding-top',
+        type: 'wire',
+        position: {
+            x: X_WIRE,
+            y: rowY(0) - ROW_HEIGHT,
+        },
+        data: { isPadding: true },
+        draggable: false,
+        selectable: false,
     });
 
-    rails.push({
-      id: `wire-${i}`,
-      type: 'wire',
-      position: { x: X_WIRE, y },
-      data: {},
-      draggable: false,
-      selectable: false,
-    });
-  }
+    // 2) Real rails — mark the first actual qubit wire as invisible
+    for (let row = 0; row < nQubits; row++) {
+        const y = rowY(row);
 
-  return rails;
+        nodes.push({
+            id: `label-${row}`,
+            type: 'qubitLabel',
+            position: { x: 0, y },
+            data: { label: `q${row}` },
+            draggable: false,
+        });
+
+        nodes.push({
+            id: `wire-${row}`,
+            type: 'wire',
+            position: { x: X_WIRE, y },
+            data: row === 0 ? { isInvisibleTop: true } : {},
+            draggable: false,
+        });
+    }
+
+    return nodes;
 }
 
 /* ──────────────────────────────────────────────────────────────
@@ -248,13 +263,11 @@ function GatePalette({ palette, onDragStart, onDragEnd }: GatePaletteProps) {
   return (
     <div
       style={{
-        position: 'absolute',
         left: 0,
         right: 0,
         bottom: 0,
         padding: '8px 16px',
         background: 'rgba(5, 7, 9, 0.9)',
-        borderTop: '1px solid #222',
         display: 'flex',
         gap: 8,
         alignItems: 'center',
@@ -337,8 +350,8 @@ function RunHighlightOverlay({ currentCol, maxCols, nQubits }: RunHighlightProps
 
 
 export function CircuitCanvas() {
-  const {screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId, qubitInputs, runProgress, setRunProgress} = useCircuitContext(); 
-  const [previewGate, setPreviewGate] = useState<PreviewGate | null>(null);
+    const { screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId, qubitInputs, runProgress, setRunProgress } = useCircuitContext();
+    const [previewGate, setPreviewGate] = useState<PreviewGate | null>(null);
     const [dragKind, setDragKind] = useState<GateKind | null>(null);
     const [currentCol, setCurrentCol] = useState<number | null>(null);
 
@@ -346,34 +359,34 @@ export function CircuitCanvas() {
     const [runMaxCols, setRunMaxCols] = useState(0);
 
 
-  const dragStartPosRef = useRef<Record<string, { x: number; y: number }>>({});
+    const dragStartPosRef = useRef<Record<string, { x: number; y: number }>>({});
 
-  const onNodesChange = (changes: NodeChange[]) => onNodesChangeBase(changes);
-  const onEdgesChange = (changes: EdgeChange[]) => onEdgesChangeBase(changes);
+    const onNodesChange = (changes: NodeChange[]) => onNodesChangeBase(changes);
+    const onEdgesChange = (changes: EdgeChange[]) => onEdgesChangeBase(changes);
 
-  const handleSelectionChange = (params: SelectionChange) => {
-    const gateNode = params.nodes.find((n) => n.type === 'gate');
-      setSelectedNodeId(gateNode ? gateNode.id : null);
-  };
+    const handleSelectionChange = (params: SelectionChange) => {
+        const gateNode = params.nodes.find((n) => n.type === 'gate');
+        setSelectedNodeId(gateNode ? gateNode.id : null);
+    };
 
-  useDeleteSelectedGate();
+    useDeleteSelectedGate();
 
-  // Rebuild rails when nQubits changes; drop gates on removed rails
-  useEffect(() => {
-    setNodes((prev) => {
-      const gateNodes = prev.filter((n) => n.type === 'gate');
+    // Rebuild rails when nQubits changes; drop gates on removed rails
+    useEffect(() => {
+        setNodes((prev) => {
+            const gateNodes = prev.filter((n) => n.type === 'gate');
 
-      const filteredGates = gateNodes.filter((g) => {
-        const { row } = gridFromNode(g);
-        return row < nQubits;
-      });
+            const filteredGates = gateNodes.filter((g) => {
+                const { row } = gridFromNode(g);
+                return row < nQubits;
+            });
 
-      const rails = createRailNodes(nQubits);
-      return [...rails, ...filteredGates];
-    });
-  }, [nQubits, setNodes]);
+            const rails = createRailNodes(nQubits);
+            return [...rails, ...filteredGates];
+        });
+    }, [nQubits, setNodes]);
 
-  /* ------- palette drag (external) ------- */
+    /* ------- palette drag (external) ------- */
 
     const handleDrop = (event: DragEvent<HTMLDivElement>) => {
         event.preventDefault();
@@ -426,77 +439,77 @@ export function CircuitCanvas() {
         setDragKind(null);
     };
 
-  const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
-    event.preventDefault();
-    event.dataTransfer.dropEffect = 'move';
+    const handleDragOver = (event: DragEvent<HTMLDivElement>) => {
+        event.preventDefault();
+        event.dataTransfer.dropEffect = 'move';
 
-    if (!dragKind) return;
+        if (!dragKind) return;
 
-    const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+        const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
-    const { row, col } = snapToGrid(pos.x, pos.y + GATE_Y_OFFSET, nQubits);
+        const { row, col } = snapToGrid(pos.x, pos.y + GATE_Y_OFFSET, nQubits);
 
-    if (isCellOccupied(nodes, row, col)) {
-      setPreviewGate(null);
-    } else {
-      setPreviewGate({ row, col, kind: dragKind });
-    }
-  };
-
-  const handleDragLeave = () => {
-    setPreviewGate(null);
-  };
-
-  /* ------- node drag (internal) ------- */
-
-  const handleNodeDragStart = (_: MouseEvent, node: Node) => {
-    if (node.type !== 'gate') return;
-
-    dragStartPosRef.current[node.id] = { ...node.position };
-
-    const data = node.data as { kind?: GateKind } | undefined;
-    const kind = data?.kind;
-    if (!kind) {
-      setPreviewGate(null);
-      return;
-    }
-
-    const flowX = node.position.x;
-    const flowY = node.position.y + GATE_Y_OFFSET;
-    const { row, col } = snapToGrid(flowX, flowY, nQubits);
-
-    if (isCellOccupied(nodes, row, col, node.id)) {
-      setPreviewGate(null);
-    } else {
-      setPreviewGate({ row, col, kind });
-    }
-  };
-
-  const handleNodeDrag = (_: MouseEvent, node: Node) => {
-    if (node.type !== 'gate') return;
-
-    const data = node.data as { kind?: GateKind } | undefined;
-    const kind = data?.kind;
-    if (!kind) {
-      setPreviewGate(null);
-      return;
-    }
-
-    const flowX = node.position.x;
-    const flowY = node.position.y + GATE_Y_OFFSET;
-    const { row, col } = snapToGrid(flowX, flowY, nQubits);
-
-    if (isCellOccupied(nodes, row, col, node.id)) {
-      setPreviewGate(null);
-    } else {
-      setPreviewGate((prev) => {
-        if (prev && prev.row === row && prev.col === col && prev.kind === kind) {
-          return prev;
+        if (isCellOccupied(nodes, row, col)) {
+            setPreviewGate(null);
+        } else {
+            setPreviewGate({ row, col, kind: dragKind });
         }
-        return { row, col, kind };
-      });
-    }
-  };
+    };
+
+    const handleDragLeave = () => {
+        setPreviewGate(null);
+    };
+
+    /* ------- node drag (internal) ------- */
+
+    const handleNodeDragStart = (_: MouseEvent, node: Node) => {
+        if (node.type !== 'gate') return;
+
+        dragStartPosRef.current[node.id] = { ...node.position };
+
+        const data = node.data as { kind?: GateKind } | undefined;
+        const kind = data?.kind;
+        if (!kind) {
+            setPreviewGate(null);
+            return;
+        }
+
+        const flowX = node.position.x;
+        const flowY = node.position.y + GATE_Y_OFFSET;
+        const { row, col } = snapToGrid(flowX, flowY, nQubits);
+
+        if (isCellOccupied(nodes, row, col, node.id)) {
+            setPreviewGate(null);
+        } else {
+            setPreviewGate({ row, col, kind });
+        }
+    };
+
+    const handleNodeDrag = (_: MouseEvent, node: Node) => {
+        if (node.type !== 'gate') return;
+
+        const data = node.data as { kind?: GateKind } | undefined;
+        const kind = data?.kind;
+        if (!kind) {
+            setPreviewGate(null);
+            return;
+        }
+
+        const flowX = node.position.x;
+        const flowY = node.position.y + GATE_Y_OFFSET;
+        const { row, col } = snapToGrid(flowX, flowY, nQubits);
+
+        if (isCellOccupied(nodes, row, col, node.id)) {
+            setPreviewGate(null);
+        } else {
+            setPreviewGate((prev) => {
+                if (prev && prev.row === row && prev.col === col && prev.kind === kind) {
+                    return prev;
+                }
+                return { row, col, kind };
+            });
+        }
+    };
 
     const handleNodeDragStop = (_: MouseEvent, node: Node) => {
         if (node.type !== 'gate') {
@@ -539,52 +552,52 @@ export function CircuitCanvas() {
         setPreviewGate(null);
     };
 
-  /* ------- palette handlers ------- */
+    /* ------- palette handlers ------- */
 
-  const handlePaletteDragStart = (kind: GateKind, event: DragEvent<HTMLDivElement>) => {
-    setDragKind(kind);
-    event.dataTransfer.setData('text/plain', kind);
-    event.dataTransfer.setData('application/gate-kind', kind);
-    event.dataTransfer.effectAllowed = 'move';
-  };
+    const handlePaletteDragStart = (kind: GateKind, event: DragEvent<HTMLDivElement>) => {
+        setDragKind(kind);
+        event.dataTransfer.setData('text/plain', kind);
+        event.dataTransfer.setData('application/gate-kind', kind);
+        event.dataTransfer.effectAllowed = 'move';
+    };
 
-  const handlePaletteDragEnd = () => {
-    setDragKind(null);
-    setPreviewGate(null);
-  };
+    const handlePaletteDragEnd = () => {
+        setDragKind(null);
+        setPreviewGate(null);
+    };
 
-  /* ------- Run button ------- */
-  
-function buildCircuitFromNodes(
-  nodes: Node[],
-  nQubits: number,
-  nCols?: number,
-): Circuit {
-  const gateNodes = nodes.filter((n) => n.type === 'gate');
+    /* ------- Run button ------- */
 
-  // infer cols if not provided
-  let inferredCols = 0;
-  for (const n of gateNodes) {
-    const { col } = gridFromNode(n);
-    if (col > inferredCols) inferredCols = col;
-  }
-  const totalCols = Math.max(1, Math.min((nCols ?? inferredCols + 1), MAX_COLS));
+    function buildCircuitFromNodes(
+        nodes: Node[],
+        nQubits: number,
+        nCols?: number,
+    ): Circuit {
+        const gateNodes = nodes.filter((n) => n.type === 'gate');
 
-  let circuit = createEmptyCircuit(nQubits, totalCols);
+        // infer cols if not provided
+        let inferredCols = 0;
+        for (const n of gateNodes) {
+            const { col } = gridFromNode(n);
+            if (col > inferredCols) inferredCols = col;
+        }
+        const totalCols = Math.max(1, Math.min((nCols ?? inferredCols + 1), MAX_COLS));
 
-  for (const node of gateNodes) {
-    const data = node.data as { kind?: GateKind } | undefined;
-    const kind = data?.kind;
-    if (!kind) continue;
+        let circuit = createEmptyCircuit(nQubits, totalCols);
 
-    const { row, col } = gridFromNode(node);
-    if (row < 0 || row >= nQubits || col < 0 || col >= totalCols) continue;
+        for (const node of gateNodes) {
+            const data = node.data as { kind?: GateKind } | undefined;
+            const kind = data?.kind;
+            if (!kind) continue;
 
-    circuit = setCell(circuit, row, col, { kind });
-  }
+            const { row, col } = gridFromNode(node);
+            if (row < 0 || row >= nQubits || col < 0 || col >= totalCols) continue;
 
-  return circuit;
-}
+            circuit = setCell(circuit, row, col, { kind });
+        }
+
+        return circuit;
+    }
 
     const handleRun = () => {
         const circuit = buildCircuitFromNodes(nodes, nQubits);
@@ -650,8 +663,17 @@ function buildCircuitFromNodes(
         return () => cancelAnimationFrame(id);
     }, [isRunning, runMaxCols, setRunProgress]);
 
-  /* ------- render ------- */
+    /* ------- render ------- */
 
+    // Tweakable offsets for the controls + global-state band (in graph coords)
+    const GLOBAL_BAND_OFFSET_X = -50;    // negative = shift left, positive = shift right
+    const GLOBAL_BAND_OFFSET_Y = -220;
+    const dim = 1 << nQubits;
+    const mockProbs = Array.from({ length: dim }, (_, i) => {
+        if (currentCol == null) return i === 0 ? 1 : 0;
+        const idx = currentCol % dim;
+        return i === idx ? 1 : 0;
+    });
     return (
         <div
             style={{
@@ -659,22 +681,21 @@ function buildCircuitFromNodes(
                 height: '100vh',
                 background: '#050709',
                 position: 'relative',
-                overflow: 'hidden',
             }}
         >
             {/* Two-column layout: left inputs, right canvas */}
             <div
                 style={{
                     display: 'grid',
-                    gridTemplateColumns: '260px 1fr', // left panel width, right fills
+                    gridTemplateColumns: '260px 1fr',
                     width: '100%',
                     height: '100%',
                 }}
             >
-                {/* Left column: per-qubit input panel */}
+                {/* LEFT: Inputs */}
                 <QubitInputsColumn />
 
-                {/* Right column: ReactFlow canvas + overlays */}
+                {/* RIGHT: ReactFlow + global-state band */}
                 <div
                     style={{
                         position: 'relative',
@@ -682,73 +703,8 @@ function buildCircuitFromNodes(
                         height: '100%',
                     }}
                 >
-                    {/* Qubit count + Run controls (overlay inside right pane) */}
                     <div
-                        style={{
-                            position: 'absolute',
-                            top: 8,
-                            left: 8,
-                            background: 'rgba(0,0,0,0.5)',
-                            padding: '6px 10px',
-                            borderRadius: 6,
-                            color: '#fff',
-                            fontFamily: 'system-ui',
-                            display: 'flex',
-                            gap: 8,
-                            alignItems: 'center',
-                            zIndex: 10,
-                        }}
-                    >
-                        <button
-                            onClick={() => setNQubits((n) => Math.max(1, n - 1))}
-                            style={{
-                                padding: '2px 6px',
-                                fontSize: 14,
-                                cursor: 'pointer',
-                                background: '#222',
-                                border: '1px solid #444',
-                                color: '#ddd',
-                            }}
-                        >
-                            –
-                        </button>
-
-                        <span>{nQubits} qubits</span>
-
-                        <button
-                            onClick={() => setNQubits((n) => Math.min(3 , n + 1))}
-                            style={{
-                                padding: '2px 6px',
-                                fontSize: 14,
-                                cursor: 'pointer',
-                                background: '#222',
-                                border: '1px solid #444',
-                                color: '#ddd',
-                            }}
-                        >
-                            +
-                        </button>
-
-                        <button
-                            onClick={handleRun}
-                            style={{
-                                marginLeft: 8,
-                                padding: '2px 10px',
-                                fontSize: 14,
-                                cursor: 'pointer',
-                                background: '#16a34a',
-                                border: '1px solid #22c55e',
-                                color: '#f9fafb',
-                                borderRadius: 4,
-                            }}
-                        >
-                            Run
-                        </button>
-                    </div>
-
-                    {/* ReactFlow canvas */}
-                    <div
-                        style={{ width: '100%', height: '100%', marginTop: -20}}
+                        style={{ width: '100%', height: '100%' }}
                         onDrop={handleDrop}
                         onDragOver={handleDragOver}
                         onDragLeave={handleDragLeave}
@@ -770,25 +726,124 @@ function buildCircuitFromNodes(
                             zoomOnDoubleClick={false}
                             zoomOnPinch={false}
                             panOnDrag={false}
-                            autoPanOnNodeDrag={false}    
-                            autoPanOnConnect={false}        
+                            autoPanOnNodeDrag={false}
+                            autoPanOnConnect={false}
                         >
                             <Background color="#333" gap={24} />
+
+                            {/* GLOBAL STATE BAND AT TOP */}
+                            <ViewportPortal>
+                                <div
+                                    style={{
+                                        position: 'absolute',
+                                        top: GLOBAL_BAND_OFFSET_Y,
+                                        left: GLOBAL_BAND_OFFSET_X,
+                                        pointerEvents: 'none',
+                                    }}
+                                >
+                                    <div
+                                        style={{
+                                            background: 'rgba(15, 23, 42, 0.9)',
+                                            borderRadius: 6,
+                                            padding: '4px 6px',
+                                            pointerEvents: 'auto',
+                                        }}
+                                    >
+                                        <GlobalStateVisualizer probs={mockProbs} />
+                                    </div>
+                                </div>
+                            </ViewportPortal>
                         </ReactFlow>
                     </div>
 
-                    {/* Ghost preview overlay (if it uses absolute/fixed itself) */}
                     <GhostPreview previewGate={previewGate} />
                 </div>
             </div>
 
-            {/* Bottom gate palette spanning full width of the outer container */}
-            <GatePalette
-                palette={GATE_PALETTE}
-                onDragStart={handlePaletteDragStart}
-                onDragEnd={handlePaletteDragEnd}
-            />
+            {/* BOTTOM PANEL — NOW CONTAINS RUN + QUBIT BUTTONS + PALETTE */}
+            <div
+                style={{
+
+                    position: 'absolute',
+                    bottom: 0,
+                    left: 0,
+                    width: '100%',
+                    background: 'rgba(5,7,9,0.9)',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 16,
+                    padding: '8px 16px',
+                    borderTop: '1px solid #222',
+                }}
+            >
+
+                {/* Gate palette next to controls */}
+                <GatePalette
+                    palette={GATE_PALETTE}
+                    onDragStart={handlePaletteDragStart}
+                    onDragEnd={handlePaletteDragEnd}
+                />
+                {/* Qubit count controls */}
+                <div
+                    style={{
+                        display: 'flex',
+                        alignItems: 'center',
+                        gap: 6,
+                        background: 'rgba(0,0,0,0.5)',
+                        padding: '6px 10px',
+                        borderRadius: 6,
+                        color: '#fff',
+                    }}
+                >
+                    <button
+                        onClick={() => setNQubits((n) => Math.max(1, n - 1))}
+                        style={{
+                            padding: '2px 6px',
+                            background: '#222',
+                            border: '1px solid #444',
+                            color: '#ddd',
+                            cursor: 'pointer',
+                        }}
+                    >
+                        –
+                    </button>
+
+                    <span>{nQubits} qubits</span>
+
+                    <button
+                        onClick={() => setNQubits((n) => Math.min(3, n + 1))}
+                        style={{
+                            padding: '2px 6px',
+                            background: '#222',
+                            border: '1px solid #444',
+                            color: '#ddd',
+                            cursor: 'pointer',
+                        }}
+                    >
+                        +
+                    </button>
+
+                    <button
+                        onClick={handleRun}
+                        style={{
+                            marginLeft: 8,
+                            padding: '2px 10px',
+                            fontSize: 14,
+                            cursor: 'pointer',
+                            background: '#16a34a',
+                            border: '1px solid #22c55e',
+                            color: '#f9fafb',
+                            borderRadius: 4,
+                        }}
+                    >
+                        Run
+                    </button>
+                </div>
+
+
+            </div>
         </div>
     );
+
 
 }

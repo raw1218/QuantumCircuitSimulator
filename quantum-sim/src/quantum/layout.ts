@@ -1,6 +1,6 @@
 // src/quantum/layout.ts
 
-export const ROW_HEIGHT = 140; 
+export const ROW_HEIGHT = 80; 
 export const Y_OFFSET = 0;    
 export const X_LABEL = 40;
 export const X_WIRE = 120;
@@ -8,11 +8,17 @@ export const COL_WIDTH = 120; // distance between "time steps"
 export const MAX_COLS = 6;
 export const GATE_Y_OFFSET = 20;
 
+      // existing
+
+// NEW: global vertical offset for all qubit wires
+export const WIRE_GLOBAL_OFFSET_Y = 0; // tweak this to push all wires up/down
+export const WIRE_GLOBAL_OFFSET_X = 0; // tweak this to push all wires left/right
 
 
 export function rowY(row: number): number {
-    return Y_OFFSET + row * ROW_HEIGHT;
+    return Y_OFFSET + WIRE_GLOBAL_OFFSET_Y + row * ROW_HEIGHT;
 }
+
 export const colX = (col: number) => X_WIRE + col * COL_WIDTH;
 
 

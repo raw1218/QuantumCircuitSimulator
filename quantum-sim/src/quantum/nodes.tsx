@@ -30,10 +30,19 @@ export function QubitLabelNode(props: NodeProps) {
 
 const TOTAL_WIRE_WIDTH = COL_WIDTH * MAX_COLS;
 
-export function WireNode(_: NodeProps) {
+export function WireNode(props: NodeProps) {
     const { runProgress } = useCircuitContext();
     const progress = runProgress ?? 0;
-
+    if (props.data.isPadding)
+        return (
+            <div
+                style={{
+                    width: `${TOTAL_WIRE_WIDTH}px`,
+                    height: 4,
+                }}
+            />
+        );
+        
     return (
         <div
             style={{
