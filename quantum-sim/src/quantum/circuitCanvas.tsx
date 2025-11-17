@@ -637,109 +637,173 @@ export function CircuitCanvas() {
 
     /* Logic For Placing Nodes */
     const placeNodeAt = (kind: GateKind | null, row: number, col: number) => {
-        if (!kind) return;
-        const xSnapped = colX(col);
-        const ySnapped = rowY(row);
-        const newId = `gate-${kind}-${Date.now()}`;
+    if (!kind) return;
 
-        let node_has_partner = false;
-        let reset_at_end = true;
+    const xSnapped = colX(col);
+    const ySnapped = rowY(row);
+    const newId = `gate-${kind}-${Date.now()}`;
 
-        if (kind == 'CNOT') {
-            console.log('Placed CNOT. isPlacingCnot partner = ', isPlacingCNOTParter);
-            if (!isPlacingCNOTParter) {
-                setIsPlacingCNOTParter(true);
-                setSelectedNodeKind('CNOT');
-                setCNOTPartnerRow(row);
-                setCNOTPartnerCol(col);
-                console.log('setSelectedNode Kind to ', selectedNodeKind);
-                reset_at_end = false;
-            }
-            else {
-                setIsPlacingCNOTParter(false);
-                node_has_partner = true;
-                console.log('placing parter, row = ', CNOTPartnerRow, ' col = ', CNOTPartnerCol);
-            }
-        }
+    let node_has_partner = false;
+    let reset_at_end = true;
 
-
-        setNodes((nds) => {
-            if (isCellOccupied(nds, row, col)) {
-                return nds;
-            }
-            const newNode: Node = {
-                id: newId,
-                type: 'gate',
-                position: { x: xSnapped, y: ySnapped - GATE_Y_OFFSET },
-                data: {
-                    kind,
-                    label: kind,
-                    col,   
-                    row,  
-                    hasPartner: node_has_partner,
-                    partnerRow: node_has_partner ? CNOTPartnerRow! : undefined,
-                    partnerCol: node_has_partner ? CNOTPartnerCol! : undefined,
-                 
-                },
-                draggable: true,
-                selected: true,
-            };
-            const cleared = nds.map((n) => ({ ...n, selected: false }));
-            return cleared.concat(newNode);
-        });
-
-
-
-
-        if (reset_at_end) {
-            setSelectedNodeKind(null);
-            setPreviewGate(null);
+    // ---- CNOT flow: first vs. second half ----
+    if (kind === 'CNOT') {
+        if (!isPlacingCNOTParter) {
+            // First CNOT in the pair
+            setIsPlacingCNOTParter(true);
+            setSelectedNodeKind('CNOT');
+            setCNOTPartnerRow(row);
+            setCNOTPartnerCol(col);
+            // don't clear selected gate or preview yet;
+            // we expect a partner next.
+            reset_at_end = false;
+        } else {
+            // Second (partner) CNOT
+            setIsPlacingCNOTParter(false);
+            node_has_partner = true;
         }
     }
+
+    setNodes((nds) => {
+        let base = nds;
+
+        // If we were EXPECTING a CNOT partner but the user is placing
+        // something else, delete the lonely first CNOT.
+        if (
+            isPlacingCNOTParter &&
+            kind !== 'CNOT' &&
+            CNOTPartnerRow != null &&
+            CNOTPartnerCol != null
+        ) {
+            base = base.filter((n) => {
+                if (n.type !== 'gate') return true;
+                const data = n.data as {
+                    kind?: GateKind;
+                    row?: number;
+                    col?: number;
+                    hasPartner?: boolean;
+                };
+
+                // Only target the unpaired CNOT we stored as the "partner origin"
+                if (data.kind !== 'CNOT') return true;
+                if (data.hasPartner) return true; // don't touch already paired ones
+
+                const sameCell =
+                    data.row === CNOTPartnerRow && data.col === CNOTPartnerCol;
+
+                // remove that one
+                return !sameCell;
+            });
+        }
+
+        // Don't place if the (possibly cleaned) grid cell is occupied
+        if (isCellOccupied(base, row, col)) {
+            return base;
+        }
+
+        const newNode: Node = {
+            id: newId,
+            type: 'gate',
+            position: { x: xSnapped, y: ySnapped - GATE_Y_OFFSET },
+            data: {
+                kind,
+                label: kind,
+                col,
+                row,
+                hasPartner: node_has_partner,
+                partnerRow: node_has_partner ? CNOTPartnerRow! : undefined,
+                partnerCol: node_has_partner ? CNOTPartnerCol! : undefined,
+            },
+            draggable: true,
+            selected: true,
+        };
+
+        const cleared = base.map((n) => ({ ...n, selected: false }));
+        return cleared.concat(newNode);
+    });
+
+    // If we bailed out of CNOT partner placement by placing something else,
+    // clean up that state.
+    if (isPlacingCNOTParter && kind !== 'CNOT') {
+        setIsPlacingCNOTParter(false);
+        setCNOTPartnerRow(null);
+        setCNOTPartnerCol(null);
+    }
+
+    if (reset_at_end) {
+        setSelectedNodeKind(null);
+        setPreviewGate(null);
+    }
+};
 
 
     // ------- click-to-place using selectedNodeKind ------- //
 
-    const handleCanvasMouseMove = (event: MouseEvent<HTMLDivElement>) => {
-        // Only show a preview if we have a selected gate kind
-        if (!selectedNodeKind) {
-            setPreviewGate(null);
-            return;
-        }
+   const handleCanvasMouseMove = (event: MouseEvent<HTMLDivElement>) => {
+    // Only show a preview if we have a selected gate kind
+    if (!selectedNodeKind) {
+        setPreviewGate(null);
+        return;
+    }
 
-        const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
+    const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
-        const { row, col } = snapToGrid(
-            pos.x,
-            pos.y + GATE_Y_OFFSET,
-            nQubits,
-        );
+    let { row, col } = snapToGrid(
+        pos.x,
+        pos.y + GATE_Y_OFFSET,
+        nQubits,
+    );
 
-        if (isCellOccupied(nodes, row, col)) {
-            setPreviewGate(null);
-        } else {
-            setPreviewGate({ row, col, kind: selectedNodeKind, hasPartner: isPlacingCNOTParter ? true : false, partnerRow : CNOTPartnerRow, partnerCol : CNOTPartnerCol });
-        }
-    };
+    // If we're placing the *partner* of a CNOT, force the column
+    if (
+        selectedNodeKind === 'CNOT' &&
+        isPlacingCNOTParter &&
+        typeof CNOTPartnerCol === 'number'
+    ) {
+        col = CNOTPartnerCol;
+    }
 
-    const handleCanvasClick = (event: MouseEvent<HTMLDivElement>) => {
-        if (!selectedNodeKind) return;
+    if (isCellOccupied(nodes, row, col)) {
+        setPreviewGate(null);
+    } else {
+        setPreviewGate({
+            row,
+            col,
+            kind: selectedNodeKind,
+            hasPartner: isPlacingCNOTParter ? true : false,
+            partnerRow: CNOTPartnerRow,
+            partnerCol: CNOTPartnerCol,
+        });
+    }
+};
 
-        const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
-        const { row, col } = snapToGrid(
-            pos.x,
-            pos.y + GATE_Y_OFFSET,
-            nQubits,
-        );
+const handleCanvasClick = (event: MouseEvent<HTMLDivElement>) => {
+    if (!selectedNodeKind) return;
 
-        if (isCellOccupied(nodes, row, col)) {
-            return;
-        }
+    const pos = screenToFlowPosition({ x: event.clientX, y: event.clientY });
 
-        // Use your existing helper
-        placeNodeAt(selectedNodeKind, row, col);
-    };
+    let { row, col } = snapToGrid(
+        pos.x,
+        pos.y + GATE_Y_OFFSET,
+        nQubits,
+    );
+
+    // Force same column when placing CNOT partner
+    if (
+        selectedNodeKind === 'CNOT' &&
+        isPlacingCNOTParter &&
+        typeof CNOTPartnerCol === 'number'
+    ) {
+        col = CNOTPartnerCol;
+    }
+
+    if (isCellOccupied(nodes, row, col)) {
+        return;
+    }
+
+    placeNodeAt(selectedNodeKind, row, col);
+};
 
 
     /* ------- palette drag (external) ------- */
