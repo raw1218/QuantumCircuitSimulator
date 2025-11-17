@@ -701,22 +701,22 @@ export function CircuitCanvas() {
             return base;
         }
 
-        const newNode: Node = {
-            id: newId,
-            type: 'gate',
-            position: { x: xSnapped, y: ySnapped - GATE_Y_OFFSET },
-            data: {
-                kind,
-                label: kind,
-                col,
-                row,
-                hasPartner: node_has_partner,
-                partnerRow: node_has_partner ? CNOTPartnerRow! : undefined,
-                partnerCol: node_has_partner ? CNOTPartnerCol! : undefined,
-            },
-            draggable: true,
-            selected: true,
-        };
+      const newNode: Node = {
+          id: newId,
+          type: 'gate',
+          position: { x: xSnapped, y: ySnapped - GATE_Y_OFFSET },
+          data: {
+              kind,
+              label: kind,
+              col,
+              row,
+              hasPartner: node_has_partner,
+              partnerRow: node_has_partner ? CNOTPartnerRow! : undefined,
+              partnerCol: node_has_partner ? CNOTPartnerCol! : undefined,
+          },
+          draggable: kind !== 'CNOT',   // 👈 CNOTs are fixed in place
+          selected: true,
+      };
 
         const cleared = base.map((n) => ({ ...n, selected: false }));
         return cleared.concat(newNode);
