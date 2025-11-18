@@ -1,5 +1,5 @@
 ﻿// src/quantum/nodes.tsx
-import React from 'react';
+import React , {type ReactElement} from 'react';
 import type { NodeProps } from '@xyflow/react';
 import type { GateKind } from './model';
 import { useCircuitContext } from './circuitCanvas';
@@ -151,7 +151,7 @@ export function GateGlyph({
         typeof partnerCol === 'number' &&
         (partnerRow !== row || partnerCol !== col);
 
-    let connector: JSX.Element | null = null;
+    let connector: ReactElement | null = null;
 
     if (hasValidPartner) {
         const dx = (partnerCol! - col!) * COL_WIDTH;

@@ -1,13 +1,15 @@
 // e.g. src/quantum/InitialStatePanel.tsx
 
-import React, { useState } from "react";
+import React, { useState} from "react";
 import {
-  QubitState,
-  qubitPresets,
+  type QubitState,
+  type BlochCoords,
   blochFromState,
-} from "./qubitState";
-import { InitialStateControls } from "./InitialStateControls";
-import { BlochSphereView } from "./BlochSphereView";
+  stateFromBloch,
+  qubitPresets,
+} from "./backend/qubitState";
+import { InitialStateControls } from "./initialStateControls";
+import { BlochSphereView } from "./blochSphereVisualization";
 
 export const InitialStatePanel: React.FC = () => {
   const [state, setState] = useState<QubitState>(

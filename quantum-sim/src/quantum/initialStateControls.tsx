@@ -2,8 +2,8 @@
 
 import React, { useMemo } from "react";
 import {
-  QubitState,
-  BlochCoords,
+  type QubitState,
+  type BlochCoords,
   blochFromState,
   stateFromBloch,
   qubitPresets,
