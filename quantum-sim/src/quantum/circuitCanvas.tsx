@@ -16,11 +16,15 @@ import {
   type Edge,
   type NodeChange,
   type EdgeChange,
-  type SelectionChange,
+  //type SelectionChange,
 } from '@xyflow/react';
+//temp
+type SelectionChange = any;
+type BottomPanelProps = any;
+
+
 
 import '@xyflow/react/dist/style.css';
-
 import { nodeTypes, GateGlyph, type GateData, GateNode } from './nodes';
 import { initialEdges } from './scene';
 import {
