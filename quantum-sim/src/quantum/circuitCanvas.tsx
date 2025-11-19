@@ -18,6 +18,12 @@ import {
   type EdgeChange,
   //type SelectionChange,
 } from '@xyflow/react';
+import {
+    simulateCircuitByColumn,
+    type GlobalStateVector,
+    type ComplexAmplitude,
+    complexMultiply,
+} from './backend/simulation';
 //temp
 type SelectionChange = any;
 type BottomPanelProps = any;
@@ -75,6 +81,7 @@ function useCircuitState() {
     const [CNOTPartnerRow, setCNOTPartnerRow] = useState<number | null>(null);
     const [CNOTPartnerCol, setCNOTPartnerCol] = useState<number | null>(null);
 
+    const [globalStatesPerColumn, setGlobalStatesPerColumn] = useState<GlobalStateVector[] | null>(null);
 
 
     const { qubitInputs, updateQubitInput, setQubitPreset } = useQubitInputs(nQubits);
@@ -110,6 +117,8 @@ function useCircuitState() {
         setCNOTPartnerRow,
         CNOTPartnerCol,
         setCNOTPartnerCol,
+        globalStatesPerColumn,
+        setGlobalStatesPerColumn,
     };
 }
 
@@ -608,9 +617,9 @@ function BottomPanel({
 
 
 export function CircuitCanvas() {
-    const { screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId, qubitInputs, runProgress, setRunProgress, currentCol, setCurrentCol, isRunning, setIsRunning, runMaxCols, setRunMaxCols, selectedNodeKind, setSelectedNodeKind, isPlacingCNOTParter, setIsPlacingCNOTParter, CNOTPartnerRow, setCNOTPartnerRow, CNOTPartnerCol,setCNOTPartnerCol} = useCircuitContext();
+    const { screenToFlowPosition, nQubits, setNQubits, nodes, setNodes, onNodesChangeBase, edges, setEdges, onEdgesChangeBase, selectedNodeId, setSelectedNodeId, qubitInputs, runProgress, setRunProgress, currentCol, setCurrentCol, isRunning, setIsRunning, runMaxCols, setRunMaxCols, selectedNodeKind, setSelectedNodeKind, isPlacingCNOTParter, setIsPlacingCNOTParter, CNOTPartnerRow, setCNOTPartnerRow, CNOTPartnerCol,setCNOTPartnerCol, globalStatesPerColumn, setGlobalStatesPerColumn } = useCircuitContext();
     const [previewGate, setPreviewGate] = useState<PreviewGate | null>(null);
-
+    
 
     const dragStartPosRef = useRef<Record<string, { x: number; y: number }>>({});
 
@@ -948,8 +957,56 @@ const handleCanvasClick = (event: MouseEvent<HTMLDivElement>) => {
         setPreviewGate(null);
     };
 
-    /* ------- Run button ------- */
 
+    function buildInitialGlobalStateFromInputs(
+        nQubits: number,
+        qubitInputs: { theta: number; phi: number }[],
+    ): GlobalStateVector {
+        const dimension = (1 << nQubits);
+
+        // Precompute single-qubit states α|0> + β|1> for each qubit
+        const localStates = Array.from({ length: nQubits }, (_, q) => {
+            const input = qubitInputs[q] ?? { theta: 0, phi: 0 };
+            const theta = input.theta;
+            const phi = input.phi;
+
+            const alphaReal = Math.cos(theta / 2);
+            const alphaImag = 0;
+
+            const betaMag = Math.sin(theta / 2);
+            const betaReal = (betaMag * Math.cos(phi));
+            const betaImag = (betaMag * Math.sin(phi));
+
+            const alpha: ComplexAmplitude = { real: alphaReal, imaginary: alphaImag };
+            const beta: ComplexAmplitude = { real: betaReal, imaginary: betaImag };
+
+            return { alpha, beta };
+        });
+
+        const amplitudes: ComplexAmplitude[] = new Array(dimension);
+
+        // Tensor product over qubits
+        for (let index = 0; index < dimension; index++) {
+            // start with amplitude 1 + 0i
+            let amp: ComplexAmplitude = { real: 1, imaginary: 0 };
+
+            for (let q = 0; q < nQubits; q++) {
+                const bit = ((index >> q) & 1);
+                const { alpha, beta } = localStates[q];
+                const factor = (bit === 0) ? alpha : beta;
+                amp = complexMultiply(amp, factor);
+            }
+
+            amplitudes[index] = amp;
+        }
+
+        return {
+            numberOfQubits: nQubits,
+            amplitudes,
+        };
+    }
+
+    /* ------- Run button ------- */
 
 
     const handleRun = () => {
@@ -989,11 +1046,22 @@ const handleCanvasClick = (event: MouseEvent<HTMLDivElement>) => {
 
         printCircuit(circuit);
 
+        // 🧠 Build initial global state from the Bloch inputs
+        const initialState = buildInitialGlobalStateFromInputs(nQubits, qubitInputs);
+
+        // 🧮 Run the circuit, get one GlobalStateVector per column
+        const statesPerColumn = simulateCircuitByColumn(circuit, initialState);
+
+        // Store in context for the visualizer
+        setGlobalStatesPerColumn(statesPerColumn);
+
         // ===== Start the animation =====
         setRunMaxCols(circuit.nCols);
         setRunProgress(0);
+        setCurrentCol(0);
         setIsRunning(true);
     };
+
 
     useEffect(() => {
         if (!isRunning || runMaxCols <= 0) return;
@@ -1129,7 +1197,9 @@ return (
                     pointerEvents: 'auto',
                   }}
                 >
-                  <GlobalStateVisualizer probs={mockProbs} />
+                {globalStatesPerColumn && (
+    <GlobalStateVisualizer statesPerColumn={globalStatesPerColumn} />
+            )}
                 </div>
               </div>
             </ViewportPortal>

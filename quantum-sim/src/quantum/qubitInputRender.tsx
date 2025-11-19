@@ -4,14 +4,28 @@ import { useCircuitContext } from './circuitCanvas';
 import { QubitVisualization } from './qubitVisualization';
 import { GlobalStateColumn } from './globalStateVisualizer';
 
+// use ComplexAmplitude + complexMultiply from your backend
+import { complexMultiply } from './backend/simulation';
+
 type QubitInputsColumnProps = {
+    // kept for compatibility; currently not used for the GlobalStateColumn
     probs: number[];
     title?: string;
 };
 
+type ComplexAmplitude = {
+    real: number;
+    imaginary: number;
+};
+
+type LocalQubitState = {
+    alpha: ComplexAmplitude; // amplitude for |0⟩
+    beta: ComplexAmplitude;  // amplitude for |1⟩
+};
+
 export function QubitInputsColumn({
-    probs,
-    title = 'Global state',
+    probs, // currently unused for the GlobalStateColumn
+    title = 'Initial global state',
 }: QubitInputsColumnProps) {
     const {
         nQubits,
@@ -24,25 +38,69 @@ export function QubitInputsColumn({
     if (nQubits <= 0) return null;
     if (!qubitInputs || qubitInputs.length === 0) return null;
 
-    // --- Prepare normalized global probabilities + labels ---
+    // Build the initial global state amplitudes directly from qubitInputs
     const dim = 1 << nQubits;
 
-    const clamped = probs.slice(0, dim);
-    while (clamped.length < dim) clamped.push(0);
+    // 1) Per-qubit local states α|0⟩ + β|1⟩ based on (θ, φ)
+    const localStates: LocalQubitState[] = Array.from(
+        { length: nQubits },
+        (_, q) => {
+            const input = qubitInputs[q] ?? { theta: 0, phi: 0 };
+            const theta = input.theta;
+            const phi = input.phi;
 
-    const sum = clamped.reduce(
-        (s, p) => s + (Number.isFinite(p) ? Math.max(0, p) : 0),
-        0,
-    );
-    const norm = sum > 0 ? sum : 1;
+            const alphaReal = Math.cos(theta / 2);
+            const alphaImag = 0;
 
-    const normalized = clamped.map((p) =>
-        Number.isFinite(p) ? Math.max(0, p) / norm : 0,
+            const betaMag = Math.sin(theta / 2);
+            const betaReal = betaMag * Math.cos(phi);
+            const betaImag = betaMag * Math.sin(phi);
+
+            return {
+                alpha: { real: alphaReal, imaginary: alphaImag },
+                beta: { real: betaReal, imaginary: betaImag },
+            };
+        },
     );
 
-    const labels = Array.from({ length: dim }, (_, i) =>
-        `|${i.toString(2).padStart(nQubits, '0')}⟩`,
-    );
+    // 2) Tensor product over all qubits to get amplitudes for each basis state
+    const entries = [];
+    let sumProb = 0;
+
+    for (let index = 0; index < dim; index++) {
+        // start with amplitude 1 + 0i
+        let amp: ComplexAmplitude = { real: 1, imaginary: 0 };
+
+        for (let q = 0; q < nQubits; q++) {
+            const bit = (index >> q) & 1;
+            const { alpha, beta } = localStates[q];
+            const factor = (bit === 0) ? alpha : beta;
+            amp = complexMultiply(amp, factor);
+        }
+
+        const real = amp.real;
+        const imaginary = amp.imaginary;
+        const rawProb = (real * real) + (imaginary * imaginary);
+        const safeProb = Number.isFinite(rawProb) ? Math.max(0, rawProb) : 0;
+
+        sumProb += safeProb;
+
+        const label = `|${index.toString(2).padStart(nQubits, '0')}⟩`;
+
+        entries.push({
+            label,
+            real,
+            imaginary,
+            probability: safeProb, // will normalize below
+        });
+    }
+
+    const norm = sumProb > 0 ? sumProb : 1;
+
+    const normalizedEntries = entries.map((entry) => ({
+        ...entry,
+        probability: entry.probability / norm,
+    }));
 
     return (
         <div
@@ -181,15 +239,18 @@ export function QubitInputsColumn({
                 );
             })}
 
-            {/* --- GlobalStateColumn --- */}
-
+            {/* Initial global state column (from qubit inputs) */}
+            <div
+                style={{
+                    marginTop: 6,
+                }}
+            >
                 <GlobalStateColumn
                     col={currentCol ?? 0}
                     title={title}
-                    labels={labels}
-                normalized={normalized}
+                    entries={normalizedEntries}
                 />
-       
+            </div>
         </div>
     );
 }

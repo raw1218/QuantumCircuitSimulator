@@ -1,32 +1,50 @@
-﻿// GlobalStateVisualizer.tsx
+﻿// src/globalStateVisualizer.tsx
 import React from 'react';
 import { useCircuitContext } from './circuitCanvas';
 import { MAX_COLS, COL_WIDTH, X_WIRE } from './layout';
+import type { GlobalStateVector } from './backend/simulation';
+
+type BasisEntry = {
+    label: string;
+    real: number;
+    imaginary: number;
+    probability: number;
+};
 
 type GlobalStateVisualizerProps = {
-    probs: number[];
+    // one global state (amplitude vector) per column of the circuit
+    statesPerColumn: GlobalStateVector[] | null;
     title?: string;
 };
 
 type GlobalStateColumnProps = {
     col: number;
     title: string;
-    labels: string[];
-    normalized: number[];
+    entries?: BasisEntry[];
 };
 
+// assumes:
+// type BasisEntry = { label: string; real: number; imaginary: number; probability: number };
+// type GlobalStateColumnProps = { col: number; title: string; entries?: BasisEntry[] };
 
-
-
-/**
- * Single column / entry for one circuit column's global state.
- */
 export const GlobalStateColumn: React.FC<GlobalStateColumnProps> = ({
     col,
     title,
-    labels,
-    normalized,
+    entries,
 }) => {
+    const safeEntries = entries ?? [];
+
+    // build labels + raw probs from entries
+    const labels = safeEntries.map((e) => e.label);
+    const rawProbs = safeEntries.map((e) =>
+        Number.isFinite(e.probability) ? Math.max(0, e.probability) : 0,
+    );
+
+    // normalize like the old `normalized` array
+    const total = rawProbs.reduce((s, p) => s + p, 0);
+    const norm = total > 0 ? total : 1;
+    const normalized = rawProbs.map((p) => p / norm);
+
     return (
         <div
             style={{
@@ -73,7 +91,7 @@ export const GlobalStateColumn: React.FC<GlobalStateColumnProps> = ({
                 </span>
             </div>
 
-            {/* Probability bars */}
+            {/* Probability bars (same look as original) */}
             <div
                 style={{
                     display: 'flex',
@@ -129,44 +147,61 @@ export const GlobalStateColumn: React.FC<GlobalStateColumnProps> = ({
     );
 };
 
+
+/**
+ * Convert a GlobalStateVector into per-basis entries with
+ * label, real, imaginary, and normalized probability.
+ */
+function buildEntriesFromState(
+    state: GlobalStateVector,
+    nQubits: number,
+): BasisEntry[] {
+    const dim = 1 << nQubits;
+    const amps = state.amplitudes;
+
+    // Clamp to dim and compute raw probabilities
+    const entries: BasisEntry[] = [];
+    let sumProb = 0;
+
+    for (let i = 0; i < dim; i++) {
+        const amp = amps[i] ?? { real: 0, imaginary: 0 };
+        const real = amp.real;
+        const imaginary = amp.imaginary;
+        const rawProb = (real * real) + (imaginary * imaginary);
+        const probability = Number.isFinite(rawProb) ? Math.max(0, rawProb) : 0;
+        sumProb += probability;
+
+        const label = `|${i.toString(2).padStart(nQubits, '0')}⟩`;
+
+        entries.push({
+            label,
+            real,
+            imaginary,
+            probability,
+        });
+    }
+
+    const norm = sumProb > 0 ? sumProb : 1;
+    return entries.map((e) => ({
+        ...e,
+        probability: e.probability / norm,
+    }));
+}
+
 /**
  * Whole row of entries; uses context and renders columns.
+ * Shows all columns up to currentCol (matching the sweep animation).
  */
 export const GlobalStateVisualizer: React.FC<GlobalStateVisualizerProps> = ({
-    probs,
+    statesPerColumn,
     title = 'Global state',
 }) => {
     const { nQubits, currentCol, runMaxCols } = useCircuitContext();
 
-    // No qubits, no table
     if (nQubits <= 0) return null;
-
-    // 🔥 If we're not running, hide the whole global-state band
     if (currentCol == null) return null;
+    if (!statesPerColumn || statesPerColumn.length === 0) return null;
 
-    const dim = 1 << nQubits; // 2^nQubits
-
-    // Clamp probs to correct dimension
-    const clamped = probs.slice(0, dim);
-    while (clamped.length < dim) {
-        clamped.push(0);
-    }
-
-    // Normalize so we don't care if backend is slightly off
-    const sum = clamped.reduce(
-        (s, p) => s + (Number.isFinite(p) ? Math.max(0, p) : 0),
-        0,
-    );
-    const norm = sum > 0 ? sum : 1;
-    const normalized = clamped.map((p) =>
-        Number.isFinite(p) ? Math.max(0, p) / norm : 0,
-    );
-
-    const labels = Array.from({ length: dim }, (_, i) =>
-        `|${i.toString(2).padStart(nQubits, '0')}⟩`,
-    );
-
-    // How many columns exist in the circuit?
     const numCols =
         (typeof runMaxCols === 'number' && runMaxCols > 0
             ? runMaxCols
@@ -193,19 +228,31 @@ export const GlobalStateVisualizer: React.FC<GlobalStateVisualizerProps> = ({
             >
                 {colIndices.map((col) => {
                     const isActive = currentCol >= col;
-
-                    // Only render the active column; others are completely empty placeholders
                     if (!isActive) {
+                        // placeholder to keep grid alignment
                         return <div key={col} />;
                     }
+
+                    const state = statesPerColumn[col];
+                    if (!state) {
+                        return (
+                            <GlobalStateColumn
+                                key={col}
+                                col={col}
+                                title={title}
+                                entries={[]}
+                            />
+                        );
+                    }
+
+                    const entries = buildEntriesFromState(state, nQubits);
 
                     return (
                         <GlobalStateColumn
                             key={col}
                             col={col}
                             title={title}
-                            labels={labels}
-                            normalized={normalized}
+                            entries={entries}
                         />
                     );
                 })}
