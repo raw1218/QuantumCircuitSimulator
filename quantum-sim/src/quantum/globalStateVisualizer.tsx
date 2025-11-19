@@ -15,6 +15,9 @@ type GlobalStateColumnProps = {
     normalized: number[];
 };
 
+
+
+
 /**
  * Single column / entry for one circuit column's global state.
  */
@@ -170,7 +173,6 @@ export const GlobalStateVisualizer: React.FC<GlobalStateVisualizerProps> = ({
             : MAX_COLS) || 1;
 
     const colIndices = Array.from({ length: numCols }, (_, i) => i);
-    console.log('numCols = ', numCols, { currentCol, colIndices });
 
     return (
         <div
@@ -191,7 +193,6 @@ export const GlobalStateVisualizer: React.FC<GlobalStateVisualizerProps> = ({
             >
                 {colIndices.map((col) => {
                     const isActive = currentCol >= col;
-                    console.log('currentCol', { currentCol, col, isActive });
 
                     // Only render the active column; others are completely empty placeholders
                     if (!isActive) {

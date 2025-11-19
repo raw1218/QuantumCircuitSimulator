@@ -2,19 +2,17 @@
 
 export type GateKind = 'H' | 'X' | 'Y' | 'Z' | 'MEASURE' | 'CNOT';
 
-// Optional: still useful as a “UI gate” type
-export type GateSpec = {
-  id: string;
-  kind: GateKind;
-  row: number;
-  col: number;
-  ctrlRow?: number;
-};
 
 // One cell in the circuit grid
 export type GateCell = {
   kind: GateKind;
-  ctrlRow?: number;
+  row: number;
+  col: number;
+  
+  //for multi gates like CNOT 
+  hasTarget?: boolean;
+  targetRow?: number;
+
 } | null;
 
 // Core circuit type: 2D grid
@@ -60,34 +58,3 @@ export function setCell(
   return { nQubits, nCols, grid: newGrid };
 }
 
-// Optional sample circuit, now as a grid
-export const sampleCircuit: Circuit = (() => {
-  const base = createEmptyCircuit(3, 4);
-
-  return {
-    ...base,
-    grid: [
-      // row 0
-      [
-        { kind: 'H' },   // col 0
-        null,            // col 1
-        { kind: 'X' },   // col 2
-        null,            // col 3
-      ],
-      // row 1
-      [
-        null,
-        null,
-        null,
-        { kind: 'MEASURE' },
-      ],
-      // row 2
-      [
-        null,
-        { kind: 'Z' },
-        null,
-        null,
-      ],
-    ],
-  };
-})();
