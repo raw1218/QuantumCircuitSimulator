@@ -146,7 +146,21 @@ export const GlobalStateColumn: React.FC<GlobalStateColumnProps> = ({
         </div>
     );
 };
-
+/**
+ * Reverse the lowest nQubits bits of index.
+ * For n=3: 0b011 (3) -> 0b110 (6), etc.
+ */
+export function reverseBits(index: number, nQubits: number): number {
+    let result = 0;
+    for (let q = 0; q < nQubits; q++) {
+        const bit = (index >> q) & 1;
+        if (bit) {
+            const destPos = nQubits - 1 - q;
+            result |= 1 << destPos;
+        }
+    }
+    return result;
+}
 
 /**
  * Convert a GlobalStateVector into per-basis entries with
@@ -159,18 +173,21 @@ function buildEntriesFromState(
     const dim = 1 << nQubits;
     const amps = state.amplitudes;
 
-    // Clamp to dim and compute raw probabilities
     const entries: BasisEntry[] = [];
     let sumProb = 0;
 
     for (let i = 0; i < dim; i++) {
-        const amp = amps[i] ?? { real: 0, imaginary: 0 };
+        // 🔁 Map the display index i (binary label) to the simulator index j
+        const j = reverseBits(i, nQubits);
+
+        const amp = amps[j] ?? { real: 0, imaginary: 0 };
         const real = amp.real;
         const imaginary = amp.imaginary;
-        const rawProb = (real * real) + (imaginary * imaginary);
+        const rawProb = real * real + imaginary * imaginary;
         const probability = Number.isFinite(rawProb) ? Math.max(0, rawProb) : 0;
         sumProb += probability;
 
+        // Keep the original binary-counting label
         const label = `|${i.toString(2).padStart(nQubits, '0')}⟩`;
 
         entries.push({

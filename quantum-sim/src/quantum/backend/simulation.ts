@@ -221,6 +221,8 @@ export function measureQubit(
         };
     }
 
+
+    console.log(`Measured qubit ${qubitIndex}: result=${resultBit}, P(0)=${probabilityZero.toFixed(4)}, P(1)=${probabilityOne.toFixed(4)}`);
     return {
         qubitIndex,
         resultBit,

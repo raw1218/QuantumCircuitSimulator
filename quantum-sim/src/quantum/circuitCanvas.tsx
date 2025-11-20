@@ -614,6 +614,56 @@ function BottomPanel({
     );
 }
 
+function amplitudeProbSquared(amp: ComplexAmplitude): number {
+    return amp.real * amp.real + amp.imaginary * amp.imaginary;
+}
+
+// Given a global state and a qubit index, figure out whether that qubit
+// is effectively 0 or 1 after collapse.
+function inferMeasuredBitForQubit(
+    state: GlobalStateVector,
+    qubitIndex: number,
+): 0 | 1 {
+    const dim = state.amplitudes.length;
+    let sum0 = 0;
+    let sum1 = 0;
+
+    for (let basis = 0; basis < dim; basis++) {
+        const prob = amplitudeProbSquared(state.amplitudes[basis]);
+        if (((basis >> qubitIndex) & 1) === 1) {
+            sum1 += prob;
+        } else {
+            sum0 += prob;
+        }
+    }
+
+    // After collapse, one of these will be ~1 and the other ~0
+    return sum1 > sum0 ? 1 : 0;
+}
+
+function computeMeasurementResults(
+    circuit: Circuit,
+    statesPerColumn: GlobalStateVector[],
+): Record<string, 0 | 1> {
+    const results: Record<string, 0 | 1> = {};
+    const { nQubits, nCols, grid } = circuit;
+    const cols = Math.min(nCols, statesPerColumn.length);
+
+    for (let col = 0; col < cols; col++) {
+        const state = statesPerColumn[col];
+        if (!state) continue;
+
+        for (let row = 0; row < nQubits; row++) {
+            const cell = grid[row][col];
+            if (!cell || cell.kind !== 'MEASURE') continue;
+
+            const bit = inferMeasuredBitForQubit(state, row);
+            results[`${row}:${col}`] = bit;
+        }
+    }
+
+    return results;
+}
 
 
 export function CircuitCanvas() {
@@ -1010,6 +1060,8 @@ const handleCanvasClick = (event: MouseEvent<HTMLDivElement>) => {
 
 
     const handleRun = () => {
+
+
         const circuit = buildCircuitFromNodes(nodes, nQubits);
 
         console.log('=== Quantum circuit ===');
@@ -1049,8 +1101,46 @@ const handleCanvasClick = (event: MouseEvent<HTMLDivElement>) => {
         // 🧠 Build initial global state from the Bloch inputs
         const initialState = buildInitialGlobalStateFromInputs(nQubits, qubitInputs);
 
-        // 🧮 Run the circuit, get one GlobalStateVector per column
         const statesPerColumn = simulateCircuitByColumn(circuit, initialState);
+
+        // Compute measurement results: key is `${row}:${col}` → 0 | 1
+        const measurementResults = computeMeasurementResults(circuit, statesPerColumn);
+
+        // Push measurement results into MEASURE nodes
+        setNodes(prev =>
+            prev.map(n => {
+                if (n.type !== 'gate') return n;
+                const data = n.data as GateData;
+
+                if (data.kind !== 'MEASURE') {
+                    return n;
+                }
+
+                const row = data.row ?? 0;
+                const col = data.col ?? 0;
+                const key = `${row}:${col}`;
+                const bit = measurementResults[key];
+
+                if (bit === undefined) {
+                    // No result (e.g. measurement not reached), leave it blank
+                    return {
+                        ...n,
+                        data: {
+                            ...data,
+                            measureOutcome: null,
+                        },
+                    };
+                }
+
+                return {
+                    ...n,
+                    data: {
+                        ...data,
+                        measureOutcome: bit,
+                    },
+                };
+            }),
+        );
 
         // Store in context for the visualizer
         setGlobalStatesPerColumn(statesPerColumn);

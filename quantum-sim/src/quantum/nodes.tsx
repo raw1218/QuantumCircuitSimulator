@@ -273,18 +273,34 @@ export function GateNode(props: NodeProps) {
             ? data.col
             : null;
 
-    let isActive = false;
-    if (!isPreview && runProgress != null && gateCol !== null && MAX_COLS > 0) {
+    // Measurement bit pushed in from CircuitCanvas / backend
+    const measurementBit = data.measureOutcome;
+    console.log('GateNode measurementBit:', measurementBit);
+
+    // By default, show the bubble only for MEASURE gates that actually have a result
+    let showMeasurementBubble =
+        kind === 'MEASURE' &&
+        measurementBit !== null &&
+        measurementBit !== undefined &&
+        !isPreview;
+
+    // Optional: gate the bubble on the sweep reaching this column
+    if (
+        showMeasurementBubble &&
+        runProgress != null &&
+        gateCol !== null &&
+        MAX_COLS > 0
+    ) {
         const scanCol = Math.min(
             MAX_COLS - 1,
             Math.floor(runProgress * MAX_COLS),
         );
-        isActive = scanCol >= gateCol;
+        showMeasurementBubble = scanCol >= gateCol;
     }
 
     return (
         <div style={{ position: 'relative', display: 'inline-block' }}>
-            {isActive && kind === 'MEASURE' && (
+            {showMeasurementBubble && (
                 <div
                     style={{
                         position: 'absolute',
@@ -300,7 +316,7 @@ export function GateNode(props: NodeProps) {
                         pointerEvents: 'none',
                     }}
                 >
-                    0
+                    {measurementBit}
                 </div>
             )}
 
@@ -318,6 +334,7 @@ export function GateNode(props: NodeProps) {
         </div>
     );
 }
+
 // ===== Node type map for ReactFlow =====
 
 export const nodeTypes = {

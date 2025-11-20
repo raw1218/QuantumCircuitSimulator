@@ -2,7 +2,7 @@
 import React from 'react';
 import { useCircuitContext } from './circuitCanvas';
 import { QubitVisualization } from './qubitVisualization';
-import { GlobalStateColumn } from './globalStateVisualizer';
+import { GlobalStateColumn, reverseBits} from './globalStateVisualizer';
 
 // use ComplexAmplitude + complexMultiply from your backend
 import { complexMultiply } from './backend/simulation';
@@ -24,7 +24,7 @@ type LocalQubitState = {
 };
 
 export function QubitInputsColumn({
-    probs, // currently unused for the GlobalStateColumn
+    probs,
     title = 'Initial global state',
 }: QubitInputsColumnProps) {
     const {
@@ -38,10 +38,9 @@ export function QubitInputsColumn({
     if (nQubits <= 0) return null;
     if (!qubitInputs || qubitInputs.length === 0) return null;
 
-    // Build the initial global state amplitudes directly from qubitInputs
     const dim = 1 << nQubits;
 
-    // 1) Per-qubit local states α|0⟩ + β|1⟩ based on (θ, φ)
+    // 1) Build per-qubit α|0>, β|1>
     const localStates: LocalQubitState[] = Array.from(
         { length: nQubits },
         (_, q) => {
@@ -63,35 +62,45 @@ export function QubitInputsColumn({
         },
     );
 
-    // 2) Tensor product over all qubits to get amplitudes for each basis state
-    const entries = [];
+    // 2) Compute amplitudes for each basis entry using patternIndex = reverseBits(displayIndex)
+    const entries: {
+        label: string;
+        real: number;
+        imaginary: number;
+        probability: number;
+    }[] = [];
+
     let sumProb = 0;
 
-    for (let index = 0; index < dim; index++) {
-        // start with amplitude 1 + 0i
+    for (let displayIndex = 0; displayIndex < dim; displayIndex++) {
+        const patternIndex = reverseBits(displayIndex, nQubits);
+
         let amp: ComplexAmplitude = { real: 1, imaginary: 0 };
 
+        // Same convention as simulateCircuit: q0 = bit0 (LSB)
         for (let q = 0; q < nQubits; q++) {
-            const bit = (index >> q) & 1;
+            const bit = (patternIndex >> q) & 1;
             const { alpha, beta } = localStates[q];
-            const factor = (bit === 0) ? alpha : beta;
-            amp = complexMultiply(amp, factor);
+            amp = complexMultiply(amp, bit === 0 ? alpha : beta);
         }
 
         const real = amp.real;
         const imaginary = amp.imaginary;
-        const rawProb = (real * real) + (imaginary * imaginary);
+        const rawProb = real * real + imaginary * imaginary;
         const safeProb = Number.isFinite(rawProb) ? Math.max(0, rawProb) : 0;
 
         sumProb += safeProb;
 
-        const label = `|${index.toString(2).padStart(nQubits, '0')}⟩`;
+        // Keep labels in standard binary-counting order
+        const label = `|${displayIndex
+            .toString(2)
+            .padStart(nQubits, '0')}⟩`;
 
         entries.push({
             label,
             real,
             imaginary,
-            probability: safeProb, // will normalize below
+            probability: safeProb,
         });
     }
 
@@ -129,7 +138,7 @@ export function QubitInputsColumn({
                 Qubit Inputs
             </div>
 
-            {/* Per-qubit cards */}
+            {/* Per-qubit control panels */}
             {Array.from({ length: nQubits }).map((_, index) => {
                 const input = qubitInputs[index];
                 if (!input) return null;
@@ -150,7 +159,7 @@ export function QubitInputsColumn({
                             gap: 4,
                         }}
                     >
-                        {/* Controls */}
+                        {/* Controls (title + preset buttons) */}
                         <div
                             style={{
                                 display: 'flex',
@@ -158,7 +167,6 @@ export function QubitInputsColumn({
                                 gap: 3,
                             }}
                         >
-                            {/* Header */}
                             <div
                                 style={{
                                     display: 'flex',
@@ -199,7 +207,6 @@ export function QubitInputsColumn({
                                 </div>
                             </div>
 
-                            {/* Sliders */}
                             <SliderRow
                                 label="θ"
                                 value={thetaDeg}
@@ -239,7 +246,7 @@ export function QubitInputsColumn({
                 );
             })}
 
-            {/* Initial global state column (from qubit inputs) */}
+            {/* Initial global state column */}
             <div
                 style={{
                     marginTop: 6,
@@ -254,6 +261,8 @@ export function QubitInputsColumn({
         </div>
     );
 }
+
+
 
 type PresetButtonProps = {
     label: string;
